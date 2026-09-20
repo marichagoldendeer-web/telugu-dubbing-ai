@@ -252,13 +252,28 @@ try:
     log("MODEL_RESTORE_PASSED")
 
     log("\n[5] TIMESTAMPED TELUGU ASR")
-    hyp = model.transcribe(
+    # This installed NeMo hybrid RNNT/CTC build exposes timestamp computation
+    # through the decoder configuration rather than the transcribe() keyword.
+    try:
+        from omegaconf import open_dict
+        with open_dict(model.cfg.decoding):
+            model.cfg.decoding.compute_timestamps = True
+        model.change_decoding_strategy(model.cfg.decoding, verbose=False)
+        log("TIMESTAMP_DECODER_CONFIGURED=True")
+    except Exception as exc:
+        log(f"TIMESTAMP_DECODER_CONFIGURE_WARNING={type(exc).__name__}: {exc}")
+
+    result = model.transcribe(
         [str(smoke)],
         batch_size=1,
         logprobs=False,
         language_id="te",
-        timestamps=True,
-    )[0]
+        return_hypotheses=True,
+    )
+    hyp = result[0]
+    # Hybrid models may return a one-element nested hypothesis list.
+    if isinstance(hyp, (list, tuple)) and len(hyp) == 1:
+        hyp = hyp[0]
     log(f"HYPOTHESIS_TYPE={type(hyp).__name__}")
 
     segments = []
