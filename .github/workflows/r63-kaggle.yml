@@ -80,13 +80,19 @@ jobs:
           timeout 1500 kaggle kernels logs "$KAGGLE_KERNEL" --follow --interval 10 2>&1 | tee -a kaggle-output/r63_kaggle_logs.txt
           rc=${PIPESTATUS[0]}
           echo "logs_follow_rc=$rc" | tee -a kaggle-output/r63_kaggle_logs.txt
-          if grep -q "R63 DIAGNOSTIC COMPLETE\|R63 DIAGNOSTIC FAILED\|R63 CHECKPOINT" kaggle-output/r63_kaggle_logs.txt; then
+          if grep -q "R63 DIAGNOSTIC COMPLETE" kaggle-output/r63_kaggle_logs.txt; then
             exit 0
+          fi
+          if grep -q "R63 DIAGNOSTIC FAILED" kaggle-output/r63_kaggle_logs.txt; then
+            exit 1
           fi
           sleep 120
           kaggle kernels logs "$KAGGLE_KERNEL" 2>&1 | tee -a kaggle-output/r63_kaggle_logs.txt
-          if grep -q "R63 DIAGNOSTIC COMPLETE\|R63 DIAGNOSTIC FAILED\|R63 CHECKPOINT" kaggle-output/r63_kaggle_logs.txt; then
+          if grep -q "R63 DIAGNOSTIC COMPLETE" kaggle-output/r63_kaggle_logs.txt; then
             exit 0
+          fi
+          if grep -q "R63 DIAGNOSTIC FAILED" kaggle-output/r63_kaggle_logs.txt; then
+            exit 1
           fi
           exit 1
 

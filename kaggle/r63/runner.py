@@ -147,7 +147,14 @@ try:
     log(f"MODEL_CLASS={type(model).__name__}")
     model.freeze()
     model = model.to("cuda")
+    model.cur_decoder = "ctc"
     log("MODEL_RESTORE_PASSED")
+    log("ASR_DECODER=ctc")
+    try:
+        lang_keys = list(model.ctc_decoder.language_masks.keys())
+        log(f"CTC_LANGUAGE_KEYS={lang_keys}")
+    except Exception as lang_exc:
+        log(f"CTC_LANGUAGE_KEYS_UNAVAILABLE={type(lang_exc).__name__}: {lang_exc}")
 
     smoke = WORK / "r63_smoke_30s.wav"
     rc = run_cmd(["ffmpeg", "-y", "-ss", "0", "-t", "30", "-i", str(video),
@@ -155,7 +162,12 @@ try:
     if rc != 0 or not smoke.exists():
         raise RuntimeError("ffmpeg audio extraction failed")
 
-    result = model.transcribe([str(smoke)], batch_size=1)
+    result = model.transcribe(
+        [str(smoke)],
+        batch_size=1,
+        logprobs=False,
+        language_id="te",
+    )
     item = result[0]
     if hasattr(item, "text"):
         transcript = str(item.text)
