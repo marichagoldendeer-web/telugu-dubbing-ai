@@ -41,6 +41,8 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODEL_REPO: ${{ env.MODEL_REPO }}
+          MODEL_DATASET: ${{ env.MODEL_DATASET }}
         run: |
           set -euo pipefail
           rm -rf /tmp/indictrans2-model /tmp/indictrans2-dataset
@@ -67,6 +69,10 @@ PY
   "description": "Private runtime model files for the Telugu dubbing Kaggle pipeline."
 }
 JSON
+
+          test -f /tmp/indictrans2-model/config.json || { echo "❌ Model download did not produce config.json"; exit 1; }
+          echo "Model files:"
+          find /tmp/indictrans2-model -maxdepth 2 -type f -printf '%P %s bytes\n' | head -50
 
           cp -a /tmp/indictrans2-model/. /tmp/indictrans2-dataset/
 
