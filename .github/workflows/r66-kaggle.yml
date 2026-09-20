@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r66-timed-dubbing
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r66-timed-dubbing-v2-v2
 
 jobs:
   r66:
@@ -61,7 +61,7 @@ jobs:
           sleep 15
           LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r66 --page-size 20)"
           printf '%s\n' "$LIST_OUTPUT"
-          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r66-timed-dubbing" {print $1; exit}')"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r66-timed-dubbing-v2" {print $1; exit}')"
           test -n "$ACTUAL_KERNEL" || {
             echo "ERROR: R66 Kaggle kernel slug not found."
             exit 1
