@@ -151,7 +151,7 @@ try:
     log(f"TORCH_CUDA={torch.version.cuda}")
     log(f"CUDA_AVAILABLE={torch.cuda.is_available()}")
     import nemo
-    log(f"NEMO_FILE={getattr(nemo, "__file__", None)}")
+    log(f"NEMO_FILE={getattr(nemo, '__file__', None)}")
     import nemo.collections.asr as nemo_asr
     log(f"NEMO_ASR_IMPORT_PASSED={nemo_asr.__name__}")
 
