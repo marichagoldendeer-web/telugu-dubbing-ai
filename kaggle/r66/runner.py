@@ -24,7 +24,7 @@ def log(msg=""):
         f.write(msg + "\n")
         f.flush()
 
-def run_cmd(args, timeout=600):
+def run_cmd(args, cwd=None, timeout=600):
     log("$ " + " ".join(map(str, args)))
     try:
         p = subprocess.run(
