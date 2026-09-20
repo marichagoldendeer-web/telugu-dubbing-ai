@@ -7,7 +7,13 @@ from pathlib import Path
 
 OUT = Path("/kaggle/working/automation_result.txt")
 TARGET = Path("/kaggle/working/indictrans_pkgs")
-REQ = Path(__file__).with_name("r49-requirements.txt")
+# Kaggle script kernels execute from /kaggle/src. Auxiliary files are not
+# guaranteed to be present there, so keep the R49 pins in the runner itself.
+R49_REQUIREMENTS = """huggingface-hub==0.36.2
+transformers==4.57.6
+indictranstoolkit==1.1.1
+"""
+REQ = Path("/kaggle/working/r49-requirements.txt")
 lines = []
 
 def log(message=""):
@@ -60,9 +66,8 @@ try:
         log(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
     log("\n[4] R49 requirements")
-    if not REQ.exists():
-        raise FileNotFoundError(f"Missing requirements file: {REQ}")
-    log(REQ.read_text(encoding="utf-8").strip())
+    REQ.write_text(R49_REQUIREMENTS, encoding="utf-8")
+    log(R49_REQUIREMENTS.strip())
 
     log("\n[5] Installing R49 packages without touching Kaggle system site-packages")
     TARGET.mkdir(parents=True, exist_ok=True)
