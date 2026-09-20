@@ -257,11 +257,15 @@ try:
     try:
         from omegaconf import open_dict
         with open_dict(model.cfg.decoding):
+            # This fork requires alignment preservation before it will emit
+            # character/word/segment timesteps.
             model.cfg.decoding.compute_timestamps = True
+            model.cfg.decoding.compute_timesteps = True
+            model.cfg.decoding.preserve_alignments = True
         # The AI4Bharat nemo-v2 fork exposes change_decoding_strategy() without
         # the newer verbose keyword. Keep the decoder configuration explicit.
         model.change_decoding_strategy(model.cfg.decoding)
-        log(f"TIMESTAMP_DECODER_CONFIGURED=True compute_timestamps={model.cfg.decoding.get('compute_timestamps', None)}")
+        log(f"TIMESTAMP_DECODER_CONFIGURED=True compute_timestamps={model.cfg.decoding.get('compute_timestamps', None)} compute_timesteps={model.cfg.decoding.get('compute_timesteps', None)} preserve_alignments={model.cfg.decoding.get('preserve_alignments', None)}")
     except Exception as exc:
         log(f"TIMESTAMP_DECODER_CONFIGURE_WARNING={type(exc).__name__}: {exc}")
 
