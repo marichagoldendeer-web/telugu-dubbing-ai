@@ -3,6 +3,9 @@ name: Kaggle GPU Automation
 on:
   workflow_dispatch:
 
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-gpu-test
+
 jobs:
   run-kaggle-gpu:
     runs-on: ubuntu-latest
@@ -35,9 +38,53 @@ jobs:
           echo "Pushing kernel to Kaggle..."
           kaggle kernels push -p kaggle/
 
-      - name: Check Kaggle kernel status
+      - name: Wait for Kaggle kernel to finish
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          echo "Checking latest Kaggle kernel status..."
-          kaggle kernels status anjiallkumar/telugu-dubbing-ai-gpu-test
+          echo "Waiting for Kaggle kernel: $KAGGLE_KERNEL"
+          completed=0
+
+          for attempt in $(seq 1 40); do
+            status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1 || true)"
+            echo "[$attempt/40] $status"
+
+            if echo "$status" | grep -q "KernelWorkerStatus.COMPLETE"; then
+              completed=1
+              echo "✅ Kaggle kernel completed successfully."
+              break
+            fi
+
+            if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
+              echo "❌ Kaggle kernel entered a failure state."
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          if [ "$completed" -ne 1 ]; then
+            echo "❌ Kaggle kernel did not reach COMPLETE within the wait window."
+            exit 1
+          fi
+
+      - name: Download Kaggle output
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          mkdir -p kaggle-output
+          echo "Downloading Kaggle kernel output..."
+          kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output -o
+          echo "Downloaded output files:"
+          find kaggle-output -maxdepth 2 -type f -printf '%p %s bytes\n'
+
+          test -s kaggle-output/automation_result.txt
+          echo "✅ automation_result.txt found and is non-empty."
+          cat kaggle-output/automation_result.txt
+
+      - name: Upload Kaggle result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaggle-gpu-result
+          path: kaggle-output/
+          if-no-files-found: error
