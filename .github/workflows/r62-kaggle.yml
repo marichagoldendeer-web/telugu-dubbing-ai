@@ -51,13 +51,26 @@ jobs:
           set -euo pipefail
           kaggle kernels push -p kaggle/r62
 
-      - name: Verify actual kernel handle
+      - name: Resolve actual Kaggle kernel slug
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
           sleep 15
-          kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r62 --page-size 20
+
+          echo "Kaggle kernels matching R62:"
+          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r62 --page-size 20)"
+          printf '%s\n' "$LIST_OUTPUT"
+
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 ~ /^anjiallkumar\\// {print $1; exit}')"
+
+          test -n "$ACTUAL_KERNEL" || {
+            echo "ERROR: Could not resolve the actual Kaggle kernel slug."
+            exit 1
+          }
+
+          echo "Resolved Kaggle kernel: $ACTUAL_KERNEL"
+          echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
 
       - name: Stream R62 kernel logs
         if: always()
@@ -67,7 +80,8 @@ jobs:
           set +e
           mkdir -p kaggle-output
           rm -f kaggle-output/r62_kaggle_logs.txt
-          echo "Waiting 30 seconds for the Kaggle session to start..."
+          echo "Using resolved Kaggle kernel: $KAGGLE_KERNEL" | tee -a kaggle-output/r62_kaggle_logs.txt
+          echo "Waiting 30 seconds for the Kaggle session to start..." | tee -a kaggle-output/r62_kaggle_logs.txt
           sleep 30
 
           echo "===== R62 KERNEL LOG STREAM =====" | tee -a kaggle-output/r62_kaggle_logs.txt
