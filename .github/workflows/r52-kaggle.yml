@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "kaggle/r52/**"
-      - "kaggle/kernel-metadata-r52.json"
+      - "kaggle/r52/kernel-metadata.json"
       - ".github/workflows/r52-kaggle.yml"
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r52
   ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
   TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
-  VIDEO_DATASET: anjiallkumar/test-video-a
+  VIDEO_DATASET: anjiallkumar/test-video-a-r52-source
 
 jobs:
   r52:
