@@ -199,6 +199,14 @@ try:
     if rc != 0:
         raise RuntimeError("huggingface-hub upgrade failed")
 
+    # Install only the runtime dependencies intentionally skipped above.
+    # This avoids letting pip replace NeMo's working dependency set.
+    rc = run_cmd([sys.executable, "-m", "pip", "install",
+                  "sacremoses", "sacrebleu", "indic-nlp-library-itt"], timeout=300)
+    if rc != 0:
+        raise RuntimeError("IndicTransToolkit runtime dependencies install failed")
+    log("INDICTRANS_RUNTIME_DEPS_PASSED")
+
     rc = run_cmd([sys.executable, "-m", "pip", "install",
                   "--no-deps", "IndicTransToolkit"], timeout=300)
     if rc != 0:
