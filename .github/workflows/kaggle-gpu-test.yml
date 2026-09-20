@@ -12,10 +12,6 @@ on:
       - ".github/workflows/kaggle-gpu-test.yml"
   workflow_dispatch:
 
-concurrency:
-  group: kaggle-gpu-automation
-  cancel-in-progress: true
-
 env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-gpu-test
   MODEL_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
