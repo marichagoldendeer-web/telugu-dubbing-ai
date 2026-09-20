@@ -46,6 +46,22 @@ jobs:
           set -euo pipefail
           kaggle kernels push -p kaggle/r64
 
+      - name: Resolve actual Kaggle kernel slug
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 15
+          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r64 --page-size 20)"
+          printf '%s\n' "$LIST_OUTPUT"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r64-tts-diagnostic" {print $1; exit}')"
+          test -n "$ACTUAL_KERNEL" || {
+            echo "ERROR: R64 Kaggle kernel slug not found."
+            exit 1
+          }
+          echo "Resolved Kaggle kernel: $ACTUAL_KERNEL"
+          echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
+
       - name: Stream R64 kernel logs
         if: always()
         env:
