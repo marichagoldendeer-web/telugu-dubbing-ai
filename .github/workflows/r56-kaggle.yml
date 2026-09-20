@@ -1,0 +1,108 @@
+name: R56 Lean Kaggle ASR Translation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r56/**"
+      - ".github/workflows/r56-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r56
+  ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
+  TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
+  VIDEO_DATASET: anjiallkumar/r52-telugu-source-video
+
+jobs:
+  r56:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || { echo "KAGGLE_API_TOKEN missing"; exit 1; }
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip kaggle
+          kaggle --version
+
+      - name: Verify source datasets
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status "$ASR_DATASET"
+          kaggle datasets status "$TRANSLATION_DATASET"
+          kaggle datasets status "$VIDEO_DATASET"
+
+      - name: Push R56 once
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p kaggle/r56
+
+      - name: Wait for R56 and require true success
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 240); do
+            status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1 || true)"
+            echo "[$attempt/240] $status"
+            if echo "$status" | grep -q "KernelWorkerStatus.COMPLETE"; then
+              echo "R56 Kaggle kernel completed."
+              exit 0
+            fi
+            if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
+              echo "R56 Kaggle kernel failed."
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "R56 timed out waiting for Kaggle."
+          exit 1
+
+      - name: Download R56 results with backoff
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          mkdir -p kaggle-output
+          for delay in 30 60 120 180 240 300; do
+            echo "Waiting ${delay}s before output download..."
+            sleep "$delay"
+            echo "Downloading R56 output..."
+            kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output -o --file-pattern '^(automation_result.txt|r56_.*.txt|r56_result.json)$' && break
+          done
+          find kaggle-output -maxdepth 1 -type f -printf '%f %s bytes\n' || true
+          for f in kaggle-output/automation_result.txt kaggle-output/r56_telugu_transcript.txt kaggle-output/r56_english_translation.txt kaggle-output/r56_result.json; do
+            if test -f "$f"; then
+              echo "----- $f -----"
+              cat "$f"
+            fi
+          done
+
+      - name: Upload R56 result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r56-result
+          path: kaggle-output/
+          if-no-files-found: warn
+
+      - name: Fail on R56 checkpoint failure
+        if: always()
+        run: |
+          if test -s kaggle-output/automation_result.txt && grep -q "R56 CHECKPOINT FAILED" kaggle-output/automation_result.txt; then
+            echo "R56 checkpoint failed."
+            exit 1
+          fi
