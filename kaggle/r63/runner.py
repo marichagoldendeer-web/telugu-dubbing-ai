@@ -213,8 +213,10 @@ text = text_file.read_text(encoding="utf-8").strip()
 
 print(f"WORKER_MODEL={model_dir}", flush=True)
 print(f"WORKER_TEXT={text}", flush=True)
-print(f"TRANSFORMERS={__import__("transformers").__version__}", flush=True)
-print(f"HUB={__import__("huggingface_hub").__version__}", flush=True)
+import transformers
+import huggingface_hub
+print(f"TRANSFORMERS={transformers.__version__}", flush=True)
+print(f"HUB={huggingface_hub.__version__}", flush=True)
 print(f"TORCH={torch.__version__} CUDA={torch.cuda.is_available()}", flush=True)
 
 ip = IndicProcessor(inference=True)
