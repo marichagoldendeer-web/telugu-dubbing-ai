@@ -183,7 +183,11 @@ try:
     with torch.no_grad():
         generated_tokens = model.generate(
             **inputs,
-            use_cache=True,
+            # IndicTrans2's bundled decoder expects the legacy tuple cache.
+            # Transformers 4.57.6 can provide a newer cache representation,
+            # which causes past_key_values[0][0] to be None inside the
+            # model's remote-code decoder. Disable KV caching for compatibility.
+            use_cache=False,
             max_length=256,
             num_beams=5,
             num_return_sequences=1,
