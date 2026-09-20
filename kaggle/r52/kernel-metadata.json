@@ -9,7 +9,7 @@
   "enable_internet": true,
   "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [
-    "anjiallkumar/test-video-a",
+    "anjiallkumar/test-video-a-r52-source",
     "anjiallkumar/indictrans2-indic-en-dist-200m",
     "anjiallkumar/indicconformer-te-hybrid-rnnt-large"
   ],
