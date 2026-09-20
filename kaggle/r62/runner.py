@@ -77,9 +77,9 @@ try:
     nemos = sorted(asr_root.rglob("*.nemo"))
     if not videos or not nemos:
         raise FileNotFoundError("MP4 or .nemo file missing")
-    video, nemo = videos[0], nemos[0]
+    video, nemo_model_path = videos[0], nemos[0]
     log(f"VIDEO={video}")
-    log(f"NEMO={nemo}")
+    log(f"NEMO_MODEL={nemo_model_path}")
 
     log("\n[4] CLONE AI4BHARAT NEMO")
     nemo_repo = WORK / "NeMo"
@@ -174,7 +174,7 @@ try:
 
     log("\n[10] MODEL RESTORE TEST")
     model = nemo_asr.models.ASRModel.restore_from(
-        restore_path=str(nemo), map_location="cuda"
+        restore_path=str(nemo_model_path), map_location="cuda"
     )
     log(f"MODEL_CLASS={type(model).__name__}")
     log("MODEL_RESTORE_PASSED")
