@@ -155,7 +155,8 @@ async def synthesize(text, voice, out_path):
 try:
     LOG.write_text("", encoding="utf-8")
     log("=" * 78)
-    log("R66 — TIMED TELUGU → ENGLISH DUBBING SAMPLE")
+    log("R66-V2 — TIMED TELUGU → ENGLISH DUBBING SAMPLE")
+    log("RUNNER_REVISION=R66-V2-CWD-VERIFIED")
     log("=" * 78)
 
     log("\n[1] RUNTIME / GPU")
@@ -213,8 +214,14 @@ try:
     if rc != 0:
         raise RuntimeError("NeMo baseline dependencies failed")
 
-    rc = run_cmd([sys.executable, "-m", "pip", "install", "-e", ".[asr]"],
-                 cwd=str(nemo_repo), timeout=1200)
+    log(f"NEMO_INSTALL_CWD={nemo_repo}")
+    log(f"NEMO_SETUP_EXISTS={(nemo_repo / 'setup.py').exists()}")
+    log(f"NEMO_PYPROJECT_EXISTS={(nemo_repo / 'pyproject.toml').exists()}")
+    rc = run_cmd(
+        [sys.executable, "-m", "pip", "install", "-e", ".[asr]"],
+        cwd=str(nemo_repo),
+        timeout=1200,
+    )
     if rc != 0:
         raise RuntimeError("NeMo ASR installation failed")
 
@@ -235,6 +242,7 @@ try:
     import nemo.collections.asr as nemo_asr
     log(f"TORCH={torch.__version__}")
     log(f"CUDA_AVAILABLE={torch.cuda.is_available()}")
+    log(f"NEMO_ACTIVE_CWD={Path.cwd()}")
     model = nemo_asr.models.ASRModel.restore_from(
         restore_path=str(nemo_model_path), map_location="cuda"
     )
