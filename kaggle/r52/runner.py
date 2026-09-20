@@ -82,7 +82,7 @@ try:
 
     log("\n[4] Verify mounted datasets")
 
-    video_root = Path("/kaggle/input/test-video-a-r52-source")
+    video_root = Path("/kaggle/input/r52-telugu-source-video")
     indictrans_root = Path("/kaggle/input/indictrans2-indic-en-dist-200m")
     asr_root = Path("/kaggle/input/indicconformer-te-hybrid-rnnt-large")
 
