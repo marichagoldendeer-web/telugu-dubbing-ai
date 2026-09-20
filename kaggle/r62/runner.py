@@ -146,10 +146,27 @@ try:
     log(f"PYTHONPATH_AFTER={sys.path}")
     import importlib.util
     log(f"NEMO_SPEC={importlib.util.find_spec('nemo')}")
+
     import torch
     log(f"TORCH={torch.__version__}")
     log(f"TORCH_CUDA={torch.version.cuda}")
     log(f"CUDA_AVAILABLE={torch.cuda.is_available()}")
+
+    # AI4Bharat NeMo's exp_manager imports NeptuneLogger unconditionally.
+    # Newer PyTorch Lightning releases removed that logger, but NeMo does
+    # not need it for this inference path. Provide a minimal compatibility
+    # shim so the ASR collection can import without enabling Neptune.
+    import pytorch_lightning
+    log(f"PYTORCH_LIGHTNING={pytorch_lightning.__version__}")
+    import pytorch_lightning.loggers as pl_loggers
+    if not hasattr(pl_loggers, "NeptuneLogger"):
+        class NeptuneLoggerCompat:
+            pass
+        pl_loggers.NeptuneLogger = NeptuneLoggerCompat
+        log("NEPTUNELOGGER_SHIM=APPLIED")
+    else:
+        log("NEPTUNELOGGER_SHIM=NOT_NEEDED")
+
     import nemo
     log(f"NEMO_FILE={getattr(nemo, '__file__', None)}")
     import nemo.collections.asr as nemo_asr
