@@ -71,6 +71,7 @@ run_checked(
         "install",
         "--disable-pip-version-check",
         "--upgrade",
+        "--no-deps",
         "--target",
         str(TARGET),
         "-r",
