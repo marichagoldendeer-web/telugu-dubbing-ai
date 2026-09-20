@@ -1,0 +1,19 @@
+{
+  "id": "anjiallkumar/telugu-dubbing-ai-r54",
+  "title": "Telugu Dubbing AI R54",
+  "code_file": "runner.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "anjiallkumar/r52-telugu-source-video",
+    "anjiallkumar/indictrans2-indic-en-dist-200m",
+    "anjiallkumar/indicconformer-te-hybrid-rnnt-large"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
