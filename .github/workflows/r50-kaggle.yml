@@ -21,85 +21,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify secrets
+      - name: Verify Kaggle secret
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
           test -n "${KAGGLE_API_TOKEN:-}" || { echo "❌ KAGGLE_API_TOKEN missing"; exit 1; }
-          test -n "${HF_TOKEN:-}" || { echo "❌ HF_TOKEN missing"; exit 1; }
           echo "✅ KAGGLE_API_TOKEN is available."
-          echo "✅ HF_TOKEN is available."
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade kaggle
+
+      - name: Verify existing model dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status anjiallkumar/indictrans2-indic-en-dist-200m
+          kaggle datasets files anjiallkumar/indictrans2-indic-en-dist-200m
 
       - name: Install tools
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade kaggle huggingface_hub==0.36.2
-
-      - name: Prepare private IndicTrans2 dataset
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          MODEL_REPO: ${{ env.MODEL_REPO }}
-          MODEL_DATASET: ${{ env.MODEL_DATASET }}
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/indictrans2-model /tmp/indictrans2-dataset
-          mkdir -p /tmp/indictrans2-model /tmp/indictrans2-dataset
-
-          echo "Downloading IndicTrans2 from Hugging Face..."
-          HF_TOKEN="$HF_TOKEN" python - <<'PY'
-from huggingface_hub import snapshot_download
-import os
-
-snapshot_download(
-    repo_id=os.environ["MODEL_REPO"],
-    local_dir="/tmp/indictrans2-model",
-    token=os.environ["HF_TOKEN"],
-)
-print("✅ Hugging Face model download completed.")
-PY
-
-          cat > /tmp/indictrans2-dataset/dataset-metadata.json <<JSON
-{
-  "title": "IndicTrans2 Indic En 200M",
-  "id": "$MODEL_DATASET",
-  "licenses": [{"name": "MIT"}],
-  "description": "Private runtime model files for the Telugu dubbing Kaggle pipeline."
-}
-JSON
-
-          test -f /tmp/indictrans2-model/config.json || { echo "❌ Model download did not produce config.json"; exit 1; }
-          echo "Model files:"
-          find /tmp/indictrans2-model -maxdepth 2 -type f -printf '%P %s bytes\n' | head -50
-
-          cp -a /tmp/indictrans2-model/. /tmp/indictrans2-dataset/
-
-          if kaggle datasets status "$MODEL_DATASET" >/tmp/dataset-status.txt 2>&1; then
-            echo "Dataset exists. Creating a new dataset version..."
-            kaggle datasets version -p /tmp/indictrans2-dataset -m "Automated IndicTrans2 model refresh" -r skip
-          else
-            echo "Dataset does not exist. Creating private dataset..."
-            kaggle datasets create -p /tmp/indictrans2-dataset -r skip
-          fi
-
-          echo "✅ Kaggle model dataset ready: $MODEL_DATASET"
-
-      - name: Attach model dataset to kernel
-        run: |
-          set -e
-          python - <<'PY'
-import json
-from pathlib import Path
-
-path = Path("kaggle/kernel-metadata.json")
-data = json.loads(path.read_text(encoding="utf-8"))
-slug = "anjiallkumar/indictrans2-indic-en-dist-200m"
-data["dataset_sources"] = [slug]
-path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-print("Attached:", slug)
-PY
 
       - name: Push R50 kernel to Kaggle
         env:
