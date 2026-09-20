@@ -1,19 +1,26 @@
 import os
 import platform
 import subprocess
+from pathlib import Path
 
-print("=" * 70)
-print("TELUGU DUBBING AI — GITHUB → KAGGLE GPU TEST")
-print("=" * 70)
+OUT = Path("/kaggle/working/automation_result.txt")
+lines = []
 
-print("\n[1] Python")
-print(platform.python_version())
+def log(message=""):
+    print(message)
+    lines.append(str(message))
 
-print("\n[2] Platform")
-print(platform.platform())
+log("=" * 70)
+log("TELUGU DUBBING AI — GITHUB → KAGGLE GPU TEST")
+log("=" * 70)
 
-print("\n[3] GPU")
+log("\n[1] Python")
+log(platform.python_version())
 
+log("\n[2] Platform")
+log(platform.platform())
+
+log("\n[3] GPU")
 result = subprocess.run(
     [
         "nvidia-smi",
@@ -25,14 +32,31 @@ result = subprocess.run(
 )
 
 if result.returncode == 0:
-    print(result.stdout.strip())
+    log(result.stdout.strip())
 else:
-    print("❌ NVIDIA GPU not detected")
+    log("❌ NVIDIA GPU not detected")
+    log(result.stderr.strip())
 
-print("\n[4] Environment")
-print("KAGGLE_KERNEL_RUN_TYPE:", os.environ.get("KAGGLE_KERNEL_RUN_TYPE"))
-print("KAGGLE_URL_BASE:", os.environ.get("KAGGLE_URL_BASE"))
+log("\n[4] PyTorch / CUDA")
+try:
+    import torch
+    log(f"PyTorch: {torch.__version__}")
+    log(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        log(f"CUDA version: {torch.version.cuda}")
+        log(f"GPU count: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            log(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+except Exception as exc:
+    log(f"PyTorch check unavailable: {type(exc).__name__}: {exc}")
 
-print("\n" + "=" * 70)
-print("HELLO FROM GITHUB → KAGGLE GPU")
-print("=" * 70)
+log("\n[5] Environment")
+log("KAGGLE_KERNEL_RUN_TYPE: " + str(os.environ.get("KAGGLE_KERNEL_RUN_TYPE")))
+log("KAGGLE_URL_BASE: " + str(os.environ.get("KAGGLE_URL_BASE")))
+
+log("\n" + "=" * 70)
+log("HELLO FROM GITHUB → KAGGLE GPU")
+log("=" * 70)
+
+OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(f"\n✅ Result saved to {OUT}")
