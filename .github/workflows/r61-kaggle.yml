@@ -1,0 +1,103 @@
+name: R61 Kaggle Diagnostic - Rate Limit Safe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r61/**"
+      - ".github/workflows/r61-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r61-diagnostic
+  ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
+  TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
+  VIDEO_DATASET: anjiallkumar/r52-telugu-source-video
+
+jobs:
+  r61:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip kaggle
+          kaggle --version
+
+      - name: Verify datasets
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status "$ASR_DATASET"
+          kaggle datasets status "$TRANSLATION_DATASET"
+          kaggle datasets status "$VIDEO_DATASET"
+
+      - name: Push R61
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p kaggle/r61
+
+      - name: Verify actual kernel slug
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 10
+          kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r61-diagnostic --page-size 20
+
+      - name: Wait for Kaggle execution before output API calls
+        run: |
+          echo "R61 submitted successfully."
+          echo "Waiting 10 minutes before the first output request to avoid Kaggle 429 rate limiting."
+          sleep 600
+
+      - name: Download diagnostic with long backoff
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          rm -rf kaggle-output
+          mkdir -p kaggle-output
+          for attempt in 1 2 3 4 5 6; do
+            echo "===== DIAGNOSTIC REQUEST [$attempt/6] ====="
+            kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output -o --file-pattern '^(r61_diagnostic.txt|r61_asr_smoke.txt|r61_pip_report.json)'
+            rc=$?
+            echo "output_command_rc=$rc"
+            find kaggle-output -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null
+            if test -s kaggle-output/r61_diagnostic.txt; then
+              echo "R61 diagnostic received."
+              exit 0
+            fi
+            echo "No diagnostic yet. Waiting 180 seconds before next request."
+            sleep 180
+          done
+          echo "R61 diagnostic was not retrieved."
+          exit 1
+
+      - name: Print diagnostic
+        if: always()
+        run: |
+          if test -f kaggle-output/r61_diagnostic.txt; then
+            cat kaggle-output/r61_diagnostic.txt
+          fi
+
+      - name: Upload R61 diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r61-diagnostic
+          path: kaggle-output/
+          if-no-files-found: warn
