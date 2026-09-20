@@ -82,12 +82,12 @@ try:
 
     log("\n[4] Verify mounted datasets")
 
-    video_root = Path("/kaggle/input/test-video-a")
+    video_root = Path("/kaggle/input/test-video-a-r52-source")
     indictrans_root = Path("/kaggle/input/indictrans2-indic-en-dist-200m")
     asr_root = Path("/kaggle/input/indicconformer-te-hybrid-rnnt-large")
 
     if not video_root.exists():
-        raise FileNotFoundError(f"test-video-a dataset not mounted: {video_root}")
+        raise FileNotFoundError(f"R52 source video dataset not mounted: {video_root}")
     if not indictrans_root.exists():
         raise FileNotFoundError(f"IndicTrans2 dataset not mounted: {indictrans_root}")
     if not asr_root.exists():
@@ -97,7 +97,7 @@ try:
     asr_model = find_file(asr_root, ".nemo")
 
     if video is None:
-        raise FileNotFoundError("No MP4 file found in test-video-a dataset")
+        raise FileNotFoundError("No MP4 file found in R52 source video dataset")
     if asr_model is None:
         raise FileNotFoundError("No .nemo checkpoint found in IndicConformer dataset")
 
