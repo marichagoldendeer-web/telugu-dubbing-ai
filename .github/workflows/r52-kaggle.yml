@@ -13,7 +13,7 @@ env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r52
   ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
   TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
-  VIDEO_DATASET: anjiallkumar/test-video-a-r52-source
+  VIDEO_DATASET: anjiallkumar/r52-telugu-source-video
 
 jobs:
   r52:
