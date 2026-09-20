@@ -44,11 +44,34 @@ jobs:
           kaggle datasets status "$ASR_DATASET"
           kaggle datasets files "$ASR_DATASET"
 
+      - name: Verify R52 source video dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Checking source video dataset: $VIDEO_DATASET"
+          status=$(kaggle datasets status "$VIDEO_DATASET")
+          echo "$status"
+          echo "$status" | grep -qi "ready" || {
+            echo "R52 source video dataset is not READY."
+            exit 1
+          }
+          kaggle datasets files "$VIDEO_DATASET"
+
+      - name: Save R52 kernel metadata and sources
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Saving R52 kernel version without running it first."
+          kaggle kernels push -p kaggle/r52 --no-run
+
       - name: Push R52 kernel to Kaggle
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
+          echo "Running the saved R52 version with its attached datasets."
           kaggle kernels push -p kaggle/r52
 
       - name: Wait for Kaggle R52
