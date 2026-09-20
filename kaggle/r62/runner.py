@@ -127,13 +127,31 @@ try:
         raise RuntimeError("NeMo ASR installation failed")
 
     log("NEMO_INSTALL_PASSED")
+
+    log("\n[8B] RE-APPLY NUMPY/PYARROW COMPATIBILITY")
+    rc = run_cmd([
+        sys.executable, "-m", "pip", "install",
+        "--force-reinstall", "numpy==1.26.4", "pyarrow<21.0.0"
+    ], timeout=600)
+    if rc != 0:
+        raise RuntimeError("post-NeMo numpy/pyarrow compatibility install failed")
+
     run_cmd([sys.executable, "-m", "pip", "check"])
 
     log("\n[9] IMPORT TEST")
+    log(f"NE MO_SOURCE={nemo_repo}")
+    log(f"PYTHONPATH_BEFORE={sys.path}")
+    if str(nemo_repo) not in sys.path:
+        sys.path.insert(0, str(nemo_repo))
+    log(f"PYTHONPATH_AFTER={sys.path}")
+    import importlib.util
+    log(f"NEMO_SPEC={importlib.util.find_spec('nemo')}")
     import torch
     log(f"TORCH={torch.__version__}")
     log(f"TORCH_CUDA={torch.version.cuda}")
     log(f"CUDA_AVAILABLE={torch.cuda.is_available()}")
+    import nemo
+    log(f"NEMO_FILE={getattr(nemo, "__file__", None)}")
     import nemo.collections.asr as nemo_asr
     log(f"NEMO_ASR_IMPORT_PASSED={nemo_asr.__name__}")
 
