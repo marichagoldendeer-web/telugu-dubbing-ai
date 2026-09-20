@@ -1,11 +1,6 @@
 name: R50 Kaggle Automation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "kaggle/**"
-      - ".github/workflows/r50-kaggle.yml"
   workflow_dispatch:
 
 env:
@@ -85,7 +80,7 @@ jobs:
         run: |
           set -e
           mkdir -p kaggle-output
-          kaggle kernels output "$KAGGLE_KERNEL"             -p kaggle-output             -o             --file-pattern '^(automation_result\.txt|.*-gpu-test\.log)$'
+          kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output -o --file-pattern '^(automation_result\.txt|.*-gpu-test\.log)$'
 
           echo "Downloaded result files:"
           find kaggle-output -maxdepth 1 -type f -printf '%f %s bytes\n' || true
