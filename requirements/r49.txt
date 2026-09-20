@@ -1,0 +1,5 @@
+# R49 — pinned compatibility stack
+# Known-good versions from the working R49 baseline.
+huggingface-hub==0.36.2
+transformers==4.57.6
+indictranstoolkit==1.1.1
