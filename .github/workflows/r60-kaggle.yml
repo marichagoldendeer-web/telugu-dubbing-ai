@@ -1,0 +1,91 @@
+name: R60 Kaggle Diagnostic - Correct Kernel Slug
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r60/**"
+      - ".github/workflows/r60-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r60-diagnostic
+  ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
+  TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
+  VIDEO_DATASET: anjiallkumar/r52-telugu-source-video
+
+jobs:
+  r60:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip kaggle
+          kaggle --version
+
+      - name: Verify datasets
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status "$ASR_DATASET"
+          kaggle datasets status "$TRANSLATION_DATASET"
+          kaggle datasets status "$VIDEO_DATASET"
+
+      - name: Push R60
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p kaggle/r60
+
+      - name: Verify actual kernel slug
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 10
+          kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r60-diagnostic --page-size 20
+
+      - name: Poll output
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          rm -rf kaggle-output
+          mkdir -p kaggle-output
+          for attempt in $(seq 1 90); do
+            echo "===== OUTPUT POLL [$attempt/90] ====="
+            kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output -o --file-pattern '^(r60_diagnostic.txt|r60_asr_smoke.txt|r60_pip_report.json)'
+            rc=$?
+            if test -s kaggle-output/r60_diagnostic.txt; then
+              echo "R60 diagnostic received."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "R60 output not available."
+          exit 1
+
+      - name: Print diagnostic
+        if: always()
+        run: |
+          test -f kaggle-output/r60_diagnostic.txt && cat kaggle-output/r60_diagnostic.txt || true
+
+      - name: Upload R60 diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r60-diagnostic
+          path: kaggle-output/
+          if-no-files-found: warn
