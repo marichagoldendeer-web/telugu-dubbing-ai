@@ -10,8 +10,9 @@ from pathlib import Path
 OUT = Path("/kaggle/working/automation_result.txt")
 TARGET = Path("/tmp/indictrans_pkgs")
 HF_CACHE = Path("/tmp/huggingface_cache")
+MODEL_DIR = Path("/tmp/indictrans2-model")
+
 MODEL_NAME = "ai4bharat/indictrans2-indic-en-dist-200M"
-MODEL_PATH = Path("/kaggle/input/indictrans2-indic-en-dist-200m")
 SRC_LANG = "tel_Telu"
 TGT_LANG = "eng_Latn"
 
@@ -69,28 +70,24 @@ try:
 
     log("\n[3] PyTorch / CUDA")
     import torch
+
     log(f"PyTorch: {torch.__version__}")
     log(f"CUDA available: {torch.cuda.is_available()}")
     log(f"CUDA version: {torch.version.cuda}")
     log(f"GPU count: {torch.cuda.device_count()}")
     for i in range(torch.cuda.device_count()):
         log(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available")
 
-    log("\n[4] Optional Kaggle HF_TOKEN secret check")
-    try:
-        from kaggle_secrets import UserSecretsClient
-        secret = UserSecretsClient().get_secret("HF_TOKEN")
-        if not secret:
-            raise RuntimeError("HF_TOKEN secret returned empty")
-        log("✅ Kaggle HF_TOKEN secret is available to this notebook.")
-    except Exception as exc:
-        log(
-            "ℹ️ Kaggle HF_TOKEN secret is not available in this API-pushed "
-            f"kernel ({type(exc).__name__}). Model test will use the mounted "
-            "private Kaggle dataset instead."
-        )
+    log("\n[4] Kaggle HF_TOKEN secret")
+    from kaggle_secrets import UserSecretsClient
+
+    hf_token = UserSecretsClient().get_secret("HF_TOKEN")
+    if not hf_token:
+        raise RuntimeError("Kaggle HF_TOKEN secret is empty or unavailable")
+    log("✅ HF_TOKEN retrieved from Kaggle Secrets.")
 
     log("\n[5] Install R49 packages in /tmp")
     TARGET.mkdir(parents=True, exist_ok=True)
@@ -132,34 +129,42 @@ try:
     ip = IndicProcessor(inference=True)
     log("IndicProcessor: created")
 
-    log("\n[7] Check mounted IndicTrans2 dataset")
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"IndicTrans2 dataset is not mounted at {MODEL_PATH}"
-        )
+    log("\n[7] Download gated IndicTrans2 model inside Kaggle")
+    log(f"Model: {MODEL_NAME}")
+    log(f"Local path: {MODEL_DIR}")
 
-    model_files = sorted(
-        p.name for p in MODEL_PATH.iterdir() if p.is_file()
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    from huggingface_hub import snapshot_download
+
+    download_start = time.time()
+    snapshot_download(
+        repo_id=MODEL_NAME,
+        token=hf_token,
+        local_dir=str(MODEL_DIR),
+        cache_dir=str(HF_CACHE),
     )
-    log(f"Model files at mount: {len(model_files)}")
+    download_seconds = time.time() - download_start
+
+    log(f"Model download/access time: {download_seconds:.2f} seconds")
+
+    model_files = sorted(p.name for p in MODEL_DIR.iterdir() if p.is_file())
+    log(f"Model files downloaded: {len(model_files)}")
     log(", ".join(model_files[:20]))
 
-    log("\n[8] Load IndicTrans2 model from local Kaggle dataset")
-    log(f"Model: {MODEL_NAME}")
-    log(f"Local path: {MODEL_PATH}")
-
+    log("\n[8] Load IndicTrans2 locally")
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
     load_start = time.time()
 
     tokenizer = AutoTokenizer.from_pretrained(
-        str(MODEL_PATH),
+        str(MODEL_DIR),
         trust_remote_code=True,
         local_files_only=True,
     )
 
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        str(MODEL_PATH),
+        str(MODEL_DIR),
         trust_remote_code=True,
         torch_dtype=torch.float16,
         local_files_only=True,
@@ -206,7 +211,6 @@ try:
         skip_special_tokens=True,
         clean_up_tokenization_spaces=True,
     )
-
     translations = ip.postprocess_batch(decoded, lang=TGT_LANG)
 
     log(f"Inference time: {infer_seconds:.2f} seconds")
@@ -228,6 +232,7 @@ try:
         "target_language": TGT_LANG,
         "device": str(next(model.parameters()).device),
         "model_dtype": str(next(model.parameters()).dtype),
+        "model_download_seconds": round(download_seconds, 2),
         "model_load_seconds": round(load_seconds, 2),
         "inference_seconds": round(infer_seconds, 2),
         "translations": results,
