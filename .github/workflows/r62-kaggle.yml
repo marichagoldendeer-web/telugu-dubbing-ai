@@ -62,7 +62,7 @@ jobs:
           LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r62 --page-size 20)"
           printf '%s\n' "$LIST_OUTPUT"
 
-          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 ~ /^anjiallkumar\\// {print $1; exit}')"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r62-diagnostic" {print $1; exit}')"
 
           test -n "$ACTUAL_KERNEL" || {
             echo "ERROR: Could not resolve the actual Kaggle kernel slug."
