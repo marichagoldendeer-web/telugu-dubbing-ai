@@ -149,7 +149,7 @@ try:
     )
 
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        str(MODEL_DIR),
+        str(MODEL_PATH),
         trust_remote_code=True,
         torch_dtype=torch.float16,
         local_files_only=True,
