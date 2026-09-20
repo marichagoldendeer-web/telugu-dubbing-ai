@@ -1,6 +1,15 @@
 name: Kaggle GPU Automation
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "kaggle/**"
+      - "requirements/**"
+      - "src/**"
+      - "configs/**"
+      - ".github/workflows/kaggle-gpu-test.yml"
   workflow_dispatch:
 
 env:
