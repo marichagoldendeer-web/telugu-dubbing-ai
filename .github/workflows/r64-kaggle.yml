@@ -43,8 +43,18 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          set -euo pipefail
-          kaggle kernels push -p kaggle/r64
+          set -uo pipefail
+          mkdir -p kaggle-output
+          echo "=== R64 KAGGLE PUSH DIAGNOSTIC ===" | tee kaggle-output/r64_push.log
+          echo "Kernel metadata:" | tee -a kaggle-output/r64_push.log
+          cat kaggle/r64/kernel-metadata.json | tee -a kaggle-output/r64_push.log
+          echo "Kaggle CLI:" | tee -a kaggle-output/r64_push.log
+          kaggle --version 2>&1 | tee -a kaggle-output/r64_push.log
+          echo "Pushing kernel..." | tee -a kaggle-output/r64_push.log
+          kaggle kernels push -p kaggle/r64 2>&1 | tee -a kaggle-output/r64_push.log
+          rc=${PIPESTATUS[0]}
+          echo "push_returncode=${rc}" | tee -a kaggle-output/r64_push.log
+          exit ${rc}
 
       - name: Resolve actual Kaggle kernel slug
         env:
