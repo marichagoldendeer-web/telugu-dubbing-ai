@@ -1,0 +1,134 @@
+name: R51 Kaggle Cold-Start Verification
+
+on:
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-gpu-test
+
+jobs:
+  r51:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || { echo "❌ KAGGLE_API_TOKEN missing"; exit 1; }
+          echo "✅ KAGGLE_API_TOKEN is available."
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade kaggle
+
+      - name: Verify persistent model dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status anjiallkumar/indictrans2-indic-en-dist-200m
+          kaggle datasets files anjiallkumar/indictrans2-indic-en-dist-200m
+
+      - name: Cold start 1
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r51-output-1
+          mkdir -p r51-output-1
+
+          echo "=== R51 COLD START 1 ==="
+          kaggle kernels push -p kaggle/
+
+          for attempt in $(seq 1 40); do
+            status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1 || true)"
+            echo "[1:$attempt/40] $status"
+
+            if echo "$status" | grep -q "KernelWorkerStatus.COMPLETE"; then
+              echo "✅ Cold start 1 completed."
+              break
+            fi
+
+            if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
+              echo "❌ Cold start 1 entered a failure state."
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          kaggle kernels output "$KAGGLE_KERNEL"             -p r51-output-1             -o             --file-pattern '^(automation_result\.txt|.*-gpu-test\.log)$'
+
+          test -s r51-output-1/automation_result.txt
+          grep -q "R50 CHECKPOINT PASSED — REAL MODEL INFERENCE" r51-output-1/automation_result.txt
+          echo "✅ Cold start 1 result passed."
+
+      - name: Cold start 2
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r51-output-2
+          mkdir -p r51-output-2
+
+          echo "=== R51 COLD START 2 ==="
+          kaggle kernels push -p kaggle/
+
+          for attempt in $(seq 1 40); do
+            status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1 || true)"
+            echo "[2:$attempt/40] $status"
+
+            if echo "$status" | grep -q "KernelWorkerStatus.COMPLETE"; then
+              echo "✅ Cold start 2 completed."
+              break
+            fi
+
+            if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
+              echo "❌ Cold start 2 entered a failure state."
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          kaggle kernels output "$KAGGLE_KERNEL"             -p r51-output-2             -o             --file-pattern '^(automation_result\.txt|.*-gpu-test\.log)$'
+
+          test -s r51-output-2/automation_result.txt
+          grep -q "R50 CHECKPOINT PASSED — REAL MODEL INFERENCE" r51-output-2/automation_result.txt
+          echo "✅ Cold start 2 result passed."
+
+      - name: Compare both cold starts
+        run: |
+          set -euo pipefail
+
+          echo "=== R51 SUMMARY ==="
+          echo "Cold start 1:"
+          grep -E "Model loaded in|Inference time:|Translated items:|R50 CHECKPOINT PASSED|ENGLISH:"             r51-output-1/automation_result.txt || true
+
+          echo
+          echo "Cold start 2:"
+          grep -E "Model loaded in|Inference time:|Translated items:|R50 CHECKPOINT PASSED|ENGLISH:"             r51-output-2/automation_result.txt || true
+
+          test "$(grep -c "R50 CHECKPOINT PASSED — REAL MODEL INFERENCE" r51-output-1/automation_result.txt)" -eq 1
+          test "$(grep -c "R50 CHECKPOINT PASSED — REAL MODEL INFERENCE" r51-output-2/automation_result.txt)" -eq 1
+
+          echo
+          echo "=============================================="
+          echo "R51 PASSED — TWO CONSECUTIVE KAGGLE COLD STARTS"
+          echo "=============================================="
+
+      - name: Upload R51 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r51-cold-start-results
+          path: |
+            r51-output-1/
+            r51-output-2/
+          if-no-files-found: warn
