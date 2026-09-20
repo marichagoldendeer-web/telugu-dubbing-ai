@@ -2,6 +2,7 @@ import os
 import platform
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 OUT = Path("/kaggle/working/automation_result.txt")
@@ -10,42 +11,46 @@ REQ = Path(__file__).with_name("r49-requirements.txt")
 lines = []
 
 def log(message=""):
-    print(message)
+    print(message, flush=True)
     lines.append(str(message))
+
+def save():
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"\n✅ Result saved to {OUT}", flush=True)
 
 def run_checked(cmd, label):
     log(f"\n{label}")
     log("$ " + " ".join(str(x) for x in cmd))
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stdout:
-        print(result.stdout.rstrip())
+        print(result.stdout.rstrip(), flush=True)
         lines.extend(result.stdout.rstrip().splitlines())
     if result.stderr:
-        print(result.stderr.rstrip())
+        print(result.stderr.rstrip(), flush=True)
         lines.extend(result.stderr.rstrip().splitlines())
     if result.returncode != 0:
         raise RuntimeError(f"{label} failed with exit code {result.returncode}")
 
-log("=" * 70)
-log("R49 — INDIC TRANS COMPATIBILITY / GPU AUTOMATION TEST")
-log("=" * 70)
-
-log("\n[1] Python")
-log(sys.version.splitlines()[0])
-log(platform.platform())
-
-log("\n[2] GPU")
-gpu = subprocess.run(
-    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-    capture_output=True,
-    text=True,
-)
-if gpu.returncode != 0:
-    raise RuntimeError("NVIDIA GPU not detected")
-log(gpu.stdout.strip())
-
-log("\n[3] Base PyTorch / CUDA")
 try:
+    log("=" * 70)
+    log("R49 — INDIC TRANS COMPATIBILITY / GPU AUTOMATION TEST")
+    log("=" * 70)
+
+    log("\n[1] Python")
+    log(sys.version.splitlines()[0])
+    log(platform.platform())
+
+    log("\n[2] GPU")
+    gpu = subprocess.run(
+        ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+        capture_output=True,
+        text=True,
+    )
+    if gpu.returncode != 0:
+        raise RuntimeError("NVIDIA GPU not detected")
+    log(gpu.stdout.strip())
+
+    log("\n[3] Base PyTorch / CUDA")
     import torch
     log(f"PyTorch: {torch.__version__}")
     log(f"CUDA available: {torch.cuda.is_available()}")
@@ -53,77 +58,78 @@ try:
     log(f"GPU count: {torch.cuda.device_count()}")
     for i in range(torch.cuda.device_count()):
         log(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-except Exception as exc:
-    raise RuntimeError(f"PyTorch check failed: {type(exc).__name__}: {exc}")
 
-log("\n[4] R49 requirements")
-if not REQ.exists():
-    raise FileNotFoundError(f"Missing requirements file: {REQ}")
-log(REQ.read_text(encoding="utf-8").strip())
+    log("\n[4] R49 requirements")
+    if not REQ.exists():
+        raise FileNotFoundError(f"Missing requirements file: {REQ}")
+    log(REQ.read_text(encoding="utf-8").strip())
 
-log("\n[5] One-shot R49 package install")
-TARGET.mkdir(parents=True, exist_ok=True)
-run_checked(
-    [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--disable-pip-version-check",
-        "--upgrade",
-        "--no-deps",
-        "--target",
-        str(TARGET),
-        "-r",
-        str(REQ),
-    ],
-    "Installing R49 packages",
-)
+    log("\n[5] Installing R49 packages without touching Kaggle system site-packages")
+    TARGET.mkdir(parents=True, exist_ok=True)
 
-# Prefer the isolated R49 package directory over base-site packages.
-sys.path.insert(0, str(TARGET))
+    # Use normal dependency resolution inside the isolated target.
+    # This keeps the Kaggle base environment untouched while avoiding
+    # the missing-dependency problem caused by --no-deps.
+    run_checked(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--upgrade",
+            "--target",
+            str(TARGET),
+            "-r",
+            str(REQ),
+        ],
+        "Installing R49 packages",
+    )
 
-log("\n[6] R49 package versions")
-import huggingface_hub
-import transformers
+    sys.path.insert(0, str(TARGET))
 
-log(f"huggingface_hub: {huggingface_hub.__version__}")
-log(f"transformers: {transformers.__version__}")
+    log("\n[6] R49 package versions")
+    import huggingface_hub
+    import transformers
+    log(f"huggingface_hub: {huggingface_hub.__version__}")
+    log(f"transformers: {transformers.__version__}")
 
-try:
+    log("\n[7] IndicTransToolkit")
     import IndicTransToolkit
     from IndicTransToolkit import IndicProcessor
     log("IndicTransToolkit: import OK")
     processor = IndicProcessor(inference=True)
     log(f"IndicProcessor: {processor.__class__.__name__} created")
-except Exception as exc:
-    raise RuntimeError(
-        f"IndicTransToolkit / IndicProcessor test failed: "
-        f"{type(exc).__name__}: {exc}"
-    )
 
-log("\n[7] Simple processor smoke test")
-try:
+    log("\n[8] Simple processor smoke test")
     sample = ["This is a Telugu translation pipeline test."]
-    processed = processor.preprocess_batch(
-        sample,
-        src_lang="eng_Latn",
-        tgt_lang="tel_Telu",
-    )
-    log(f"Preprocessed items: {len(processed)}")
-except TypeError:
-    # Keep the R49 checkpoint focused on import/processor compatibility.
-    log("Processor method signature differs; import/creation check passed.")
+    try:
+        processed = processor.preprocess_batch(
+            sample,
+            src_lang="eng_Latn",
+            tgt_lang="tel_Telu",
+        )
+        log(f"Preprocessed items: {len(processed)}")
+    except TypeError:
+        log("Processor method signature differs; import/creation check passed.")
+
+    log("\n[9] Kaggle environment")
+    log("KAGGLE_KERNEL_RUN_TYPE: " + str(os.environ.get("KAGGLE_KERNEL_RUN_TYPE")))
+    log("KAGGLE_URL_BASE: " + str(os.environ.get("KAGGLE_URL_BASE")))
+
+    log("\n" + "=" * 70)
+    log("R49 CHECKPOINT PASSED")
+    log("=" * 70)
+    save()
+
 except Exception as exc:
-    raise RuntimeError(f"Processor smoke test failed: {type(exc).__name__}: {exc}")
-
-log("\n[8] Kaggle environment")
-log("KAGGLE_KERNEL_RUN_TYPE: " + str(os.environ.get("KAGGLE_KERNEL_RUN_TYPE")))
-log("KAGGLE_URL_BASE: " + str(os.environ.get("KAGGLE_URL_BASE")))
-
-log("\n" + "=" * 70)
-log("R49 CHECKPOINT PASSED")
-log("=" * 70)
-
-OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
-print(f"\n✅ Result saved to {OUT}")
+    log("\n" + "=" * 70)
+    log("R49 CHECKPOINT FAILED")
+    log("=" * 70)
+    log(f"{type(exc).__name__}: {exc}")
+    log("\nTraceback:")
+    tb = traceback.format_exc()
+    print(tb, flush=True)
+    lines.extend(tb.rstrip().splitlines())
+    save()
+    raise
