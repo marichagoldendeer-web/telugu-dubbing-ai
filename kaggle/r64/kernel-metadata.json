@@ -1,6 +1,6 @@
 {
   "id": "anjiallkumar/telugu-dubbing-ai-r64-tts-diagnostic",
-  "title": "Telugu Dubbing AI R64 English TTS Diagnostic",
+  "title": "Telugu Dubbing AI R64 TTS Diagnostic",
   "code_file": "runner.py",
   "language": "python",
   "kernel_type": "script",
