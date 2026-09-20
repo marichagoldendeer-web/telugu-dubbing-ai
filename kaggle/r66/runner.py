@@ -28,7 +28,7 @@ def run_cmd(args, cwd=None, timeout=600):
     log("$ " + " ".join(map(str, args)))
     try:
         p = subprocess.run(
-            args, text=True, stdout=subprocess.PIPE,
+            args, cwd=cwd, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, timeout=timeout, check=False
         )
         if p.stdout:
