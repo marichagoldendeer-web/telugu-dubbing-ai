@@ -3,11 +3,13 @@ name: R50 Kaggle Automation
 on:
   push:
     branches: [main]
+    paths:
+      - "kaggle/**"
+      - ".github/workflows/r50-kaggle.yml"
   workflow_dispatch:
 
 env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-gpu-test
-  MODEL_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
 
 jobs:
   r50:
@@ -17,92 +19,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify GitHub Actions secrets
+      - name: Verify Kaggle token
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set -e
           test -n "${KAGGLE_API_TOKEN:-}" || { echo "❌ KAGGLE_API_TOKEN missing"; exit 1; }
-          test -n "${HF_TOKEN:-}" || { echo "❌ HF_TOKEN missing"; exit 1; }
-          echo "✅ Both required secrets are available."
+          echo "✅ KAGGLE_API_TOKEN is available."
 
-      - name: Install tools
+      - name: Install Kaggle CLI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade kaggle huggingface_hub==0.36.2
+          python -m pip install --upgrade kaggle
 
-      - name: Prepare private IndicTrans2 dataset
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          if kaggle datasets status "$MODEL_DATASET" >/tmp/dataset-status.txt 2>&1; then
-            echo "✅ Kaggle model dataset already exists: $MODEL_DATASET"
-            exit 0
-          fi
-
-          echo "Downloading gated IndicTrans2 model from Hugging Face..."
-          rm -rf /tmp/indictrans2-model /tmp/indictrans2-dataset
-          mkdir -p /tmp/indictrans2-model /tmp/indictrans2-dataset
-
-          HF_TOKEN="$HF_TOKEN" python - <<'PY'
-from huggingface_hub import snapshot_download
-import os
-
-snapshot_download(
-    repo_id="ai4bharat/indictrans2-indic-en-dist-200M",
-    local_dir="/tmp/indictrans2-model",
-    token=os.environ["HF_TOKEN"],
-)
-PY
-
-          cat > /tmp/indictrans2-dataset/dataset-metadata.json <<'JSON'
-{
-  "title": "IndicTrans2 Indic En 200M",
-  "id": "anjiallkumar/indictrans2-indic-en-dist-200m",
-  "licenses": [
-    {
-      "name": "MIT"
-    }
-  ],
-  "description": "Private runtime model files for the Telugu dubbing Kaggle pipeline."
-}
-JSON
-
-          cp -a /tmp/indictrans2-model/. /tmp/indictrans2-dataset/
-
-          echo "Creating private Kaggle dataset..."
-          kaggle datasets create -p /tmp/indictrans2-dataset -q -t -r skip
-          echo "✅ Private model dataset created."
-
-      - name: Attach private model dataset to kernel metadata
-        run: |
-          set -e
-          python - <<'PY'
-import json
-from pathlib import Path
-
-path = Path("kaggle/kernel-metadata.json")
-data = json.loads(path.read_text(encoding="utf-8"))
-
-slug = "anjiallkumar/indictrans2-indic-en-dist-200m"
-data["dataset_sources"] = list(dict.fromkeys(data.get("dataset_sources", []) + [slug]))
-
-path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-print("Attached dataset:", slug)
-PY
-
-      - name: Push Kaggle kernel
+      - name: Push R50 kernel to Kaggle
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -e
+          echo "Pushing R50 runner to Kaggle..."
           kaggle kernels push -p kaggle/
 
-      - name: Wait for Kaggle kernel
+      - name: Wait for Kaggle R50
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
@@ -113,21 +51,21 @@ PY
             echo "[$attempt/40] $status"
 
             if echo "$status" | grep -q "KernelWorkerStatus.COMPLETE"; then
-              echo "✅ Kaggle kernel completed."
+              echo "✅ Kaggle R50 completed."
               exit 0
             fi
 
             if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
-              echo "⚠️ Kaggle kernel entered a failure state."
+              echo "⚠️ Kaggle R50 entered a failure state."
               exit 0
             fi
 
             sleep 15
           done
 
-          echo "⚠️ Kaggle kernel did not reach a terminal state within the wait window."
+          echo "⚠️ Kaggle R50 did not reach a terminal state within the wait window."
 
-      - name: Download result files
+      - name: Download R50 result
         if: always()
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -144,7 +82,7 @@ PY
             cat kaggle-output/automation_result.txt
           fi
 
-      - name: Upload result artifact
+      - name: Upload R50 result artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
