@@ -1,0 +1,4 @@
+# R49 — pinned compatibility stack for the Kaggle kernel
+huggingface-hub==0.36.2
+transformers==4.57.6
+indictranstoolkit==1.1.1
