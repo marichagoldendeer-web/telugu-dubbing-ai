@@ -53,6 +53,7 @@ jobs:
         run: |
           echo "Waiting for Kaggle kernel: $KAGGLE_KERNEL"
           completed=0
+          failed=0
 
           for attempt in $(seq 1 40); do
             status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1 || true)"
@@ -65,19 +66,20 @@ jobs:
             fi
 
             if echo "$status" | grep -Eq "KernelWorkerStatus.(ERROR|FAILED|CANCELLED|CANCELED|INVALID)"; then
-              echo "❌ Kaggle kernel entered a failure state."
-              exit 1
+              failed=1
+              echo "❌ Kaggle kernel entered a failure state; continuing to collect output."
+              break
             fi
 
             sleep 15
           done
 
-          if [ "$completed" -ne 1 ]; then
+          if [ "$completed" -ne 1 ] && [ "$failed" -ne 1 ]; then
             echo "❌ Kaggle kernel did not reach COMPLETE within the wait window."
-            exit 1
           fi
 
       - name: Download Kaggle output
+        if: always()
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
@@ -87,13 +89,25 @@ jobs:
           echo "Downloaded output files:"
           find kaggle-output -maxdepth 2 -type f -printf '%p %s bytes\n'
 
-          test -s kaggle-output/automation_result.txt
-          echo "✅ automation_result.txt found and is non-empty."
-          cat kaggle-output/automation_result.txt
+          if test -s kaggle-output/automation_result.txt; then
+            echo "✅ automation_result.txt found and is non-empty."
+            cat kaggle-output/automation_result.txt
+          else
+            echo "⚠️ automation_result.txt was not produced."
+          fi
 
       - name: Upload Kaggle result artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kaggle-gpu-result
           path: kaggle-output/
           if-no-files-found: error
+
+      - name: Fail workflow when R49 failed
+        if: always()
+        run: |
+          if test -s kaggle-output/automation_result.txt && grep -q "R49 CHECKPOINT FAILED" kaggle-output/automation_result.txt; then
+            echo "❌ R49 reported a failure inside Kaggle."
+            exit 1
+          fi
