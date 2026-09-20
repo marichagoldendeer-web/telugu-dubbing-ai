@@ -81,13 +81,15 @@ try:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available")
 
-    log("\n[4] Kaggle HF_TOKEN secret")
-    from kaggle_secrets import UserSecretsClient
-
-    hf_token = UserSecretsClient().get_secret("HF_TOKEN")
-    if not hf_token:
-        raise RuntimeError("Kaggle HF_TOKEN secret is empty or unavailable")
-    log("✅ HF_TOKEN retrieved from Kaggle Secrets.")
+    log("\n[4] Check mounted IndicTrans2 dataset")
+    MODEL_PATH = Path("/kaggle/input/indictrans2-indic-en-dist-200m")
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"IndicTrans2 dataset is not mounted at {MODEL_PATH}"
+        )
+    model_files = sorted(p.name for p in MODEL_PATH.iterdir() if p.is_file())
+    log(f"Model files mounted: {len(model_files)}")
+    log(", ".join(model_files[:20]))
 
     log("\n[5] Install R49 packages in /tmp")
     TARGET.mkdir(parents=True, exist_ok=True)
@@ -129,28 +131,11 @@ try:
     ip = IndicProcessor(inference=True)
     log("IndicProcessor: created")
 
-    log("\n[7] Download gated IndicTrans2 model inside Kaggle")
+    log("\n[7] Use mounted IndicTrans2 model")
     log(f"Model: {MODEL_NAME}")
-    log(f"Local path: {MODEL_DIR}")
+    log(f"Local path: {MODEL_PATH}")
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-    from huggingface_hub import snapshot_download
-
-    download_start = time.time()
-    snapshot_download(
-        repo_id=MODEL_NAME,
-        token=hf_token,
-        local_dir=str(MODEL_DIR),
-        cache_dir=str(HF_CACHE),
-    )
-    download_seconds = time.time() - download_start
-
-    log(f"Model download/access time: {download_seconds:.2f} seconds")
-
-    model_files = sorted(p.name for p in MODEL_DIR.iterdir() if p.is_file())
-    log(f"Model files downloaded: {len(model_files)}")
-    log(", ".join(model_files[:20]))
+    download_seconds = 0.0
 
     log("\n[8] Load IndicTrans2 locally")
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
@@ -158,7 +143,7 @@ try:
     load_start = time.time()
 
     tokenizer = AutoTokenizer.from_pretrained(
-        str(MODEL_DIR),
+        str(MODEL_PATH),
         trust_remote_code=True,
         local_files_only=True,
     )
@@ -232,7 +217,7 @@ try:
         "target_language": TGT_LANG,
         "device": str(next(model.parameters()).device),
         "model_dtype": str(next(model.parameters()).dtype),
-        "model_download_seconds": round(download_seconds, 2),
+        "model_mount_seconds": round(download_seconds, 2),
         "model_load_seconds": round(load_seconds, 2),
         "inference_seconds": round(infer_seconds, 2),
         "translations": results,
