@@ -1,0 +1,14 @@
+{
+  "id": "anjiallkumar/telugu-dubbing-ai-r64-tts-diagnostic",
+  "title": "R64 English TTS Diagnostic",
+  "code_file": "runner.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "dataset_sources": [
+    "anjiallkumar/r52-telugu-source-video",
+    "anjiallkumar/indicconformer-te-hybrid-rnnt-large",
+    "anjiallkumar/indictrans2-indic-en-dist-200m"
+  ]
+}
