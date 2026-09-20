@@ -28,6 +28,75 @@ jobs:
           echo "Checking Kaggle authentication..."
           kaggle kernels list --mine --page-size 5
 
+      - name: Prepare private IndicTrans2 model dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          MODEL_DATASET="anjiallkumar/indictrans2-indic-en-dist-200m"
+          MODEL_ID="ai4bharat/indictrans2-indic-en-dist-200M"
+          MODEL_DIR="/tmp/indictrans2-model"
+          DATASET_DIR="/tmp/indictrans2-dataset"
+
+          echo "Checking whether private Kaggle model dataset already exists..."
+          if kaggle datasets status "$MODEL_DATASET" >/tmp/kaggle_dataset_status.txt 2>&1; then
+            echo "✅ Private model dataset already exists: $MODEL_DATASET"
+          else
+            echo "Dataset not found. Downloading the gated model with HF_TOKEN in GitHub Actions..."
+            python -m pip install --disable-pip-version-check --upgrade huggingface_hub==0.36.2
+            rm -rf "$MODEL_DIR" "$DATASET_DIR"
+            mkdir -p "$MODEL_DIR" "$DATASET_DIR"
+
+            HF_TOKEN="$HF_TOKEN" python - <<'PY'
+from huggingface_hub import snapshot_download
+from pathlib import Path
+import os
+
+snapshot_download(
+    repo_id="ai4bharat/indictrans2-indic-en-dist-200M",
+    local_dir=Path("/tmp/indictrans2-model"),
+    token=os.environ["HF_TOKEN"],
+)
+PY
+
+            cat >"$DATASET_DIR/dataset-metadata.json" <<'JSON'
+{
+  "title": "IndicTrans2 Indic En 200M",
+  "id": "anjiallkumar/indictrans2-indic-en-dist-200m",
+  "licenses": [
+    {
+      "name": "MIT"
+    }
+  ],
+  "description": "Private runtime copy of the AI4Bharat IndicTrans2 Indic-En Distilled 200M model for the Telugu dubbing Kaggle pipeline."
+}
+JSON
+
+            cp -a "$MODEL_DIR"/. "$DATASET_DIR"/
+            echo "Creating private Kaggle dataset..."
+            kaggle datasets create -p "$DATASET_DIR" -q -t -r skip
+            echo "✅ Private model dataset created."
+          fi
+
+      - name: Attach model dataset to Kaggle kernel metadata
+        run: |
+          python - <<'PY'
+import json
+from pathlib import Path
+
+path = Path("kaggle/kernel-metadata.json")
+data = json.loads(path.read_text(encoding="utf-8"))
+slug = "anjiallkumar/indictrans2-indic-en-dist-200m"
+sources = data.get("dataset_sources", [])
+if slug not in sources:
+    sources.append(slug)
+data["dataset_sources"] = sources
+path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+print("dataset_sources:", data["dataset_sources"])
+PY
+
       - name: Push and run Kaggle GPU kernel
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
