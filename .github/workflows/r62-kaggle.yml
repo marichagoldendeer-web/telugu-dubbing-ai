@@ -1,0 +1,104 @@
+name: R62 Kaggle Diagnostic - Use Kernel Logs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r62/**"
+      - ".github/workflows/r62-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r62-diagnostic
+  ASR_DATASET: anjiallkumar/indicconformer-te-hybrid-rnnt-large
+  TRANSLATION_DATASET: anjiallkumar/indictrans2-indic-en-dist-200m
+  VIDEO_DATASET: anjiallkumar/r52-telugu-source-video
+
+jobs:
+  r62:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI 2.2.2
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          kaggle --version
+
+      - name: Verify datasets
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle datasets status "$ASR_DATASET"
+          kaggle datasets status "$TRANSLATION_DATASET"
+          kaggle datasets status "$VIDEO_DATASET"
+
+      - name: Push R62
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p kaggle/r62
+
+      - name: Verify actual kernel handle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 15
+          kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r62 --page-size 20
+
+      - name: Stream R62 kernel logs
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          mkdir -p kaggle-output
+          rm -f kaggle-output/r62_kaggle_logs.txt
+          echo "Waiting 30 seconds for the Kaggle session to start..."
+          sleep 30
+
+          echo "===== R62 KERNEL LOG STREAM =====" | tee -a kaggle-output/r62_kaggle_logs.txt
+
+          timeout 1500 kaggle kernels logs "$KAGGLE_KERNEL" --follow --interval 10 2>&1 | tee -a kaggle-output/r62_kaggle_logs.txt
+          rc=${PIPESTATUS[0]}
+          echo "logs_follow_rc=$rc" | tee -a kaggle-output/r62_kaggle_logs.txt
+
+          if grep -q "R62 DIAGNOSTIC COMPLETE\|R62 DIAGNOSTIC FAILED\|R62 CHECKPOINT" kaggle-output/r62_kaggle_logs.txt; then
+            echo "R62 diagnostic marker received from Kaggle logs." | tee -a kaggle-output/r62_kaggle_logs.txt
+            exit 0
+          fi
+
+          echo "No final diagnostic marker yet. Retrying one-shot kernel logs after 120 seconds..." | tee -a kaggle-output/r62_kaggle_logs.txt
+          sleep 120
+          kaggle kernels logs "$KAGGLE_KERNEL" 2>&1 | tee -a kaggle-output/r62_kaggle_logs.txt
+          rc=${PIPESTATUS[0]}
+          echo "logs_oneshot_rc=$rc" | tee -a kaggle-output/r62_kaggle_logs.txt
+
+          if grep -q "R62 DIAGNOSTIC COMPLETE\|R62 DIAGNOSTIC FAILED\|R62 CHECKPOINT" kaggle-output/r62_kaggle_logs.txt; then
+            echo "R62 diagnostic marker received from one-shot logs." | tee -a kaggle-output/r62_kaggle_logs.txt
+            exit 0
+          fi
+
+          echo "R62 kernel logs did not return the diagnostic marker." | tee -a kaggle-output/r62_kaggle_logs.txt
+          exit 1
+
+      - name: Upload R62 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r62-kaggle-logs
+          path: kaggle-output/r62_kaggle_logs.txt
+          if-no-files-found: warn
