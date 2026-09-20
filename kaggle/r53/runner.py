@@ -20,10 +20,26 @@ def candidates(slug):
         Path("/kaggle/input")/slug,
     ]
 
-def locate(slug):
+def locate(slug, marker=None):
     for p in candidates(slug):
         if p.exists():
             return p
+    # Kaggle API-pushed kernels may expose attached datasets below
+    # /kaggle/input/datasets instead of /kaggle/input/<slug>.
+    base=Path("/kaggle/input")
+    if not base.exists():
+        return None
+    owner, name=slug.split("/",1)
+    direct_matches=[p for p in base.rglob("*") if p.is_dir() and p.name==name]
+    if direct_matches:
+        return direct_matches[0]
+    if marker:
+        matches=[]
+        for p in base.rglob(marker):
+            if p.is_file():
+                matches.append(p.parent)
+        if matches:
+            return matches[0]
     return None
 
 def download_dataset(slug, target):
@@ -62,9 +78,9 @@ try:
         log(f"{label}: {p if p else 'MISSING'}")
 
     if roots["VIDEO"] is None:
-        raise FileNotFoundError("Video dataset is not mounted")
+        raise FileNotFoundError("Video dataset is not mounted anywhere under /kaggle/input")
     if roots["ASR"] is None:
-        raise FileNotFoundError("IndicConformer dataset is not mounted")
+        raise FileNotFoundError("IndicConformer dataset is not mounted anywhere under /kaggle/input")
 
     if roots["INDICTRANS"] is None:
         log("\n[4] IndicTrans2 attachment missing — starting runtime recovery")
