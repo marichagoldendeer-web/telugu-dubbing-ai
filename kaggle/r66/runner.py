@@ -63,15 +63,22 @@ def as_float(value):
     except Exception:
         return None
 
-def normalize_words(raw):
+def normalize_words(raw, time_stride=1.0):
     out = []
     if not isinstance(raw, list):
         return out
     for item in raw:
         if isinstance(item, dict):
-            word = item.get("word") or item.get("text") or item.get("token")
+            word = item.get("word") or item.get("text") or item.get("token") or item.get("char")
             start = as_float(item.get("start"))
             end = as_float(item.get("end"))
+            if start is None:
+                start = as_float(item.get("start_offset"))
+            if end is None:
+                end = as_float(item.get("end_offset"))
+            if start is not None and end is not None:
+                start *= time_stride
+                end *= time_stride
             if word is not None and start is not None and end is not None and end > start:
                 out.append({"word": str(word).strip(), "start": start, "end": end})
         elif isinstance(item, (list, tuple)) and len(item) >= 3:
@@ -79,7 +86,7 @@ def normalize_words(raw):
             end = as_float(item[1])
             word = item[2]
             if start is not None and end is not None and word is not None and end > start:
-                out.append({"word": str(word).strip(), "start": start, "end": end})
+                out.append({"word": str(word).strip(), "start": start * time_stride, "end": end * time_stride})
     return [x for x in out if x["word"]]
 
 def normalize_segments(raw):
@@ -305,6 +312,15 @@ try:
     log(f"HYPOTHESIS_TYPE={type(hyp).__name__}")
 
     segments = []
+    timestamp_stride = 1.0
+    try:
+        subsampling = float(getattr(model.encoder, "subsampling_factor", 1) or 1)
+        window_stride = float(model.cfg.preprocessor.window_stride)
+        timestamp_stride = subsampling * window_stride
+        log(f"TIMESTAMP_STRIDE={timestamp_stride:.6f}s subsampling_factor={subsampling:g} window_stride={window_stride:g}")
+    except Exception as exc:
+        log(f"TIMESTAMP_STRIDE_WARNING={type(exc).__name__}: {exc}")
+
     for attr in ("timestamp", "timestep"):
         data = getattr(hyp, attr, None)
         if isinstance(data, dict):
@@ -318,7 +334,10 @@ try:
         for attr in ("timestamp", "timestep"):
             data = getattr(hyp, attr, None)
             if isinstance(data, dict):
-                words = normalize_words(data.get("word"))
+                raw_words = data.get("word")
+                if isinstance(raw_words, list) and raw_words:
+                    log(f"{attr.upper()}_WORD_SAMPLE={raw_words[0]}")
+                words = normalize_words(raw_words, time_stride=timestamp_stride)
                 if words:
                     log(f"{attr.upper()}_WORD_COUNT={len(words)}")
                     break
