@@ -379,12 +379,22 @@ try:
     # serialization submodule. Transformers imports it from the hub root.
     # Bridge that packaging difference without changing the pinned versions.
     try:
+        # NeMo imports an older Transformers/Hub stack in this same Python
+        # process. Pip replaces the files on disk, but already-imported modules
+        # remain in sys.modules. Clear both package trees before loading the
+        # translation stack so we actually use the newly installed versions.
+        for module_name in list(sys.modules):
+            if (
+                module_name == "transformers"
+                or module_name.startswith("transformers.")
+                or module_name == "huggingface_hub"
+                or module_name.startswith("huggingface_hub.")
+            ):
+                del sys.modules[module_name]
+
         import huggingface_hub
         import huggingface_hub.constants as hf_constants
 
-        # Hub 0.36.2's serialization package expects these filename patterns.
-        # Some Kaggle images leave an older constants module loaded, so restore
-        # the missing serialization constants before importing the helper.
         compat_constants = {
             "PYTORCH_WEIGHTS_FILE_PATTERN": "pytorch_model{suffix}.bin",
             "SAFETENSORS_WEIGHTS_FILE_PATTERN": "model{suffix}.safetensors",
