@@ -5,14 +5,14 @@ on:
     branches: [main]
     paths:
       - "kaggle/r69/**"
-      - ".github/workflows/r68-kaggle.yml"
+      - ".github/workflows/r69-kaggle.yml"
   workflow_dispatch:
 
 env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r69-word-segmentation
 
 jobs:
-  r68:
+  r69:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -38,7 +38,7 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p kaggle-output
-          kaggle kernels push -p kaggle/r68 2>&1 | tee kaggle-output/r69_push.log
+          kaggle kernels push -p kaggle/r69 2>&1 | tee kaggle-output/r69_push.log
           rc=${PIPESTATUS[0]}
           echo "push_returncode=${rc}" | tee -a kaggle-output/r69_push.log
           exit ${rc}
@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           sleep 15
-          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r68 --page-size 20)"
+          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r69 --page-size 20)"
           printf '%s\n' "$LIST_OUTPUT"
           ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r69-word-segmentation" {print $1; exit}')"
           test -n "$ACTUAL_KERNEL"
@@ -79,7 +79,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: r68-diagnostics
+          name: r69-diagnostics
           path: |
             kaggle-output/r69_kaggle_logs.txt
             kaggle-output/r69_push.log
@@ -100,7 +100,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: r68-generated-outputs
+          name: r69-generated-outputs
           path: |
             kaggle-output/**/*.mp4
             kaggle-output/**/*.wav
