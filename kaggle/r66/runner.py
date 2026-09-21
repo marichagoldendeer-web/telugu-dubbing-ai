@@ -251,29 +251,6 @@ try:
     model.cur_decoder = "ctc"
     log("MODEL_RESTORE_PASSED")
 
-    # AI4Bharat's multilingual SentencePiece tokenizer requires a language
-    # argument for ids_to_text()/ids_to_tokens(). The timestamp helper in the
-    # nemo-v2 RNNT decoder calls these methods without that argument. Bind a
-    # Telugu-default wrapper so timestamp computation can proceed while normal
-    # non-timestamp decoding remains unchanged.
-    try:
-        import types
-        decoding = model.decoding
-        original_decode_tokens_to_str = decoding.decode_tokens_to_str
-        original_decode_ids_to_tokens = decoding.decode_ids_to_tokens
-
-        def decode_tokens_to_str_te(self, tokens, lang=None):
-            return original_decode_tokens_to_str(tokens, "te" if lang is None else lang)
-
-        def decode_ids_to_tokens_te(self, tokens, lang=None):
-            return original_decode_ids_to_tokens(tokens, "te" if lang is None else lang)
-
-        decoding.decode_tokens_to_str = types.MethodType(decode_tokens_to_str_te, decoding)
-        decoding.decode_ids_to_tokens = types.MethodType(decode_ids_to_tokens_te, decoding)
-        log("MULTILINGUAL_TOKENIZER_LANG_PATCH=True lang=te")
-    except Exception as exc:
-        log(f"MULTILINGUAL_TOKENIZER_LANG_PATCH_WARNING={type(exc).__name__}: {exc}")
-
     log("\n[5] TIMESTAMPED TELUGU ASR")
     # This installed NeMo hybrid RNNT/CTC build exposes timestamp computation
     # through the decoder configuration rather than the transcribe() keyword.
@@ -288,6 +265,28 @@ try:
         # The AI4Bharat nemo-v2 fork exposes change_decoding_strategy() without
         # the newer verbose keyword. Keep the decoder configuration explicit.
         model.change_decoding_strategy(model.cfg.decoding)
+
+        # change_decoding_strategy() rebuilds the decoding object, so the
+        # multilingual tokenizer compatibility patch must be applied AFTER
+        # that call. The timestamp helper invokes these methods without lang.
+        try:
+            import types
+            decoding = model.decoding
+            original_decode_tokens_to_str = decoding.decode_tokens_to_str
+            original_decode_ids_to_tokens = decoding.decode_ids_to_tokens
+
+            def decode_tokens_to_str_te(self, tokens, lang=None):
+                return original_decode_tokens_to_str(tokens, "te" if lang is None else lang)
+
+            def decode_ids_to_tokens_te(self, tokens, lang=None):
+                return original_decode_ids_to_tokens(tokens, "te" if lang is None else lang)
+
+            decoding.decode_tokens_to_str = types.MethodType(decode_tokens_to_str_te, decoding)
+            decoding.decode_ids_to_tokens = types.MethodType(decode_ids_to_tokens_te, decoding)
+            log("MULTILINGUAL_TOKENIZER_LANG_PATCH=True lang=te")
+        except Exception as exc:
+            log(f"MULTILINGUAL_TOKENIZER_LANG_PATCH_WARNING={type(exc).__name__}: {exc}")
+
         log(f"TIMESTAMP_DECODER_CONFIGURED=True compute_timestamps={model.cfg.decoding.get('compute_timestamps', None)} compute_timesteps={model.cfg.decoding.get('compute_timesteps', None)} preserve_alignments={model.cfg.decoding.get('preserve_alignments', None)}")
     except Exception as exc:
         log(f"TIMESTAMP_DECODER_CONFIGURE_WARNING={type(exc).__name__}: {exc}")
