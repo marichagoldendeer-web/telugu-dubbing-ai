@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r69-word-segmentation
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r69-word-timestamp-segmentation
 
 jobs:
   r69:
@@ -51,7 +51,7 @@ jobs:
           sleep 15
           LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r69 --page-size 20)"
           printf '%s\n' "$LIST_OUTPUT"
-          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r69-word-segmentation" {print $1; exit}')"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r69-word-timestamp-segmentation" {print $1; exit}')"
           test -n "$ACTUAL_KERNEL"
           echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
 
