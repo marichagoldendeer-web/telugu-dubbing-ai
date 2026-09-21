@@ -434,11 +434,20 @@ try:
     )
     trans_model = AutoModelForSeq2SeqLM.from_pretrained(
         str(translation_model_dir), trust_remote_code=True, local_files_only=True,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        attn_implementation="eager"
     )
     device = "cuda" if torch.cuda.is_available() else "cpu"
     trans_model = trans_model.to(device)
     trans_model.eval()
+
+    # The bundled IndicTrans2 generation code uses the legacy tuple cache.
+    # Transformers 4.57 can supply a newer cache structure that contains
+    # placeholders, leading to past_key_values[0][0] being None. Disable
+    # generation caching for this small segment batch; correctness is more
+    # important than cache speed here.
+    trans_model.config.use_cache = False
+    log("INDICTRANS_USE_CACHE=False")
 
     source_texts = [s["text"] for s in segments]
     batch = ip.preprocess_batch(source_texts, src_lang=SOURCE_LANG, tgt_lang=TARGET_LANG)
@@ -448,7 +457,11 @@ try:
 
     with torch.inference_mode():
         outputs = trans_model.generate(
-            **inputs, num_beams=5, num_return_sequences=1, max_length=256
+            **inputs,
+            num_beams=5,
+            num_return_sequences=1,
+            max_length=256,
+            use_cache=False
         )
     decoded = tokenizer.batch_decode(
         outputs.detach().cpu().tolist(),
