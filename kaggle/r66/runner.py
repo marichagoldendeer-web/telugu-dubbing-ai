@@ -382,14 +382,20 @@ try:
         import huggingface_hub
         import huggingface_hub.constants as hf_constants
 
-        # Hub 0.36.2's serialization package expects this TensorFlow filename
-        # pattern, but some Kaggle images leave an older constants module loaded.
-        # Restore the missing constant before importing the torch sharding helper.
-        if not hasattr(hf_constants, "TF2_WEIGHTS_FILE_PATTERN"):
-            hf_constants.TF2_WEIGHTS_FILE_PATTERN = "tf_model{suffix}.h5"
-            log("HF_HUB_TF2_PATTERN_COMPAT_PATCH=True")
-        else:
-            log("HF_HUB_TF2_PATTERN_COMPAT_PATCH=False")
+        # Hub 0.36.2's serialization package expects these filename patterns.
+        # Some Kaggle images leave an older constants module loaded, so restore
+        # the missing serialization constants before importing the helper.
+        compat_constants = {
+            "PYTORCH_WEIGHTS_FILE_PATTERN": "pytorch_model{suffix}.bin",
+            "SAFETENSORS_WEIGHTS_FILE_PATTERN": "model{suffix}.safetensors",
+            "TF2_WEIGHTS_FILE_PATTERN": "tf_model{suffix}.h5",
+        }
+        for name, value in compat_constants.items():
+            if not hasattr(hf_constants, name):
+                setattr(hf_constants, name, value)
+                log(f"HF_HUB_CONSTANT_PATCH=True {name}={value}")
+            else:
+                log(f"HF_HUB_CONSTANT_PATCH=False {name}")
 
         if not hasattr(huggingface_hub, "split_torch_state_dict_into_shards"):
             from huggingface_hub.serialization import split_torch_state_dict_into_shards
