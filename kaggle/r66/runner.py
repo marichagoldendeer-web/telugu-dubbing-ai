@@ -367,10 +367,28 @@ try:
     log("R66 CHECKPOINT 1 PASSED — TIMESTAMPED TELUGU ASR")
 
     log("\n[6] INDIC TRANS2 TRANSLATION")
+    # NeMo pins an older Transformers/Hub pair during ASR installation.
+    # The IndicTrans2 custom model was already validated with this pair in R49,
+    # so restore that known-good translation stack after ASR is complete.
     rc = run_cmd([sys.executable, "-m", "pip", "install", "--upgrade",
-                  "huggingface-hub==0.36.2"], timeout=300)
+                  "transformers==4.57.6", "huggingface-hub==0.36.2"], timeout=600)
     if rc != 0:
-        raise RuntimeError("huggingface-hub upgrade failed")
+        raise RuntimeError("IndicTrans Hugging Face stack upgrade failed")
+
+    # Some Kaggle images expose the torch-sharding helper only through the
+    # serialization submodule. Transformers imports it from the hub root.
+    # Bridge that packaging difference without changing the pinned versions.
+    try:
+        import huggingface_hub
+        if not hasattr(huggingface_hub, "split_torch_state_dict_into_shards"):
+            from huggingface_hub.serialization import split_torch_state_dict_into_shards
+            huggingface_hub.split_torch_state_dict_into_shards = split_torch_state_dict_into_shards
+            log("HF_HUB_TORCH_SHARD_COMPAT_PATCH=True")
+        else:
+            log("HF_HUB_TORCH_SHARD_COMPAT_PATCH=False")
+        log(f"HF_HUB_VERSION={getattr(huggingface_hub, '__version__', 'unknown')}")
+    except Exception as exc:
+        raise RuntimeError(f"huggingface-hub compatibility patch failed: {type(exc).__name__}: {exc}")
     rc = run_cmd([sys.executable, "-m", "pip", "install",
                   "sacremoses", "sacrebleu", "indic-nlp-library-itt"], timeout=300)
     if rc != 0:
