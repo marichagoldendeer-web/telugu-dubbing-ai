@@ -14,10 +14,11 @@ TRANSLATION_DS = "anjiallkumar/indictrans2-indic-en-dist-200m"
 
 CLIP_SECONDS = 300.0
 VOICE = "en-IN-PrabhatNeural"
-# R79 allows a modest 1.25x post-TTS timing fit for dense English
-# segments. This avoids over-merging contiguous speech while keeping the
-# 1.35x quality-audit hard limit as a separate safety boundary.
-MAX_TTS_SPEED = 1.25
+# R79 allows a modest 1.30x post-TTS timing fit for dense English
+# segments. Run 10 reached 1.273x after bounded sentence merging, so
+# 1.30x avoids another unnecessary merge while keeping the 1.35x
+# quality-audit hard limit as a separate safety boundary.
+MAX_TTS_SPEED = 1.30
 WORD_GAP_THRESHOLD = 0.40
 MAX_WORDS_PER_SEGMENT = 12
 MAX_SEGMENT_SECONDS = 4.80
