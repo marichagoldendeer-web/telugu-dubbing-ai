@@ -1102,7 +1102,7 @@ try:
             log(f"R79_QC_FILE_SIZE={size}")
             log(f"R79_QC_VIDEO_STREAMS={len(video_streams)}")
             log(f"R79_QC_AUDIO_STREAMS={len(audio_streams)}")
-            if not (59.5 <= duration <= 300.05):
+            if not (299.5 <= duration <= 300.05):
                 qc_errors.append(f"final duration out of range: {duration:.3f}s")
             if size <= 100000:
                 qc_errors.append(f"final MP4 unexpectedly small: {size} bytes")
