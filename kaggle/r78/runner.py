@@ -755,7 +755,13 @@ try:
         prev_boundary = 0.0 if i == 1 else float(segments[i - 2]["end"])
         next_boundary = CLIP_SECONDS if i == len(segments) else float(segments[i]["start"])
         available_before = min(MAX_EDGE_BORROW, max(0.0, base_start - prev_boundary))
-        available_after = min(MAX_EDGE_BORROW, max(0.0, next_boundary - base_end))
+        # To prevent two neighboring segments from borrowing the same gap,
+        # internal segments borrow only from their leading gap. The final
+        # segment may also use trailing silence up to the 0.75s side cap.
+        available_after = (
+            min(MAX_EDGE_BORROW, max(0.0, next_boundary - base_end))
+            if i == len(segments) else 0.0
+        )
         expansion = min(MAX_WINDOW_EXPANSION, required_extra, available_before + available_after)
 
         take_before = min(available_before, expansion)
@@ -881,6 +887,7 @@ try:
     max_words_per_second = 0.0
     total_speech_seconds = 0.0
     max_source_gap = 0.0
+    max_timing_expansion = 0.0
     total_translation_words = 0
 
     previous_end = 0.0
@@ -890,6 +897,9 @@ try:
         target = float(seg.get("target_duration") or max(0.30, end - start))
         raw = float(seg.get("tts_duration_raw") or 0.0)
         required_speed = max(1.0, raw / target) if target > 0 else 99.0
+        max_timing_expansion = max(
+            max_timing_expansion, float(seg.get("timing_expansion") or 0.0)
+        )
         words = re.findall(r"[A-Za-z0-9']+", str(seg.get("english", "")))
         word_count = len(words)
         wps = word_count / target if target > 0 else 99.0
@@ -940,6 +950,7 @@ try:
     log(f"R78_AUDIT_SPEECH_COVERAGE={speech_coverage:.3f}")
     log(f"R78_AUDIT_MAX_SOURCE_GAP={max_source_gap:.3f}s")
     log(f"R78_AUDIT_MAX_REQUIRED_TTS_SPEED={max_required_speed:.3f}x")
+    log(f"R78_AUDIT_MAX_TIMING_EXPANSION={max_timing_expansion:.3f}s")
     log(f"R78_AUDIT_MAX_ENGLISH_WORDS_PER_SECOND={max_words_per_second:.3f}")
     log(f"R78_AUDIT_AVG_ENGLISH_WORDS_PER_SECOND={avg_translation_wps:.3f}")
 
@@ -962,6 +973,7 @@ try:
         "speech_coverage": speech_coverage,
         "max_source_gap_seconds": max_source_gap,
         "max_required_tts_speed": max_required_speed,
+        "max_timing_expansion_seconds": max_timing_expansion,
         "max_english_words_per_second": max_words_per_second,
         "average_english_words_per_second": avg_translation_wps,
         "long_silence_events": silence_events,
