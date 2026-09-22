@@ -52,15 +52,28 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          sleep 15
-          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r79 --page-size 20)"
-          printf '%s\n' "$LIST_OUTPUT"
-          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
-          test -n "$ACTUAL_KERNEL"
+          # Kaggle may take several seconds to index a newly pushed kernel.
+          # Retry the exact slug instead of assuming the first list call is ready.
+          ACTUAL_KERNEL=""
+          for attempt in $(seq 1 10); do
+            echo "R79 kernel resolve attempt $attempt/10"
+            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r79 --page-size 50 || true)"
+            printf '%s\n' "$LIST_OUTPUT"
+            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
+            if [ -n "$ACTUAL_KERNEL" ]; then
+              break
+            fi
+            sleep 30
+          done
+          test -n "$ACTUAL_KERNEL" || {
+            echo "R79_ERROR=Kaggle kernel slug was not discoverable after 10 attempts"
+            exit 1
+          }
           echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
+          echo "R79_KAGGLE_KERNEL_RESOLVED=$ACTUAL_KERNEL"
 
       - name: Stream R79 kernel logs
-        if: always()
+        if: success()
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
