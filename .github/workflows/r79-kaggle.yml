@@ -52,48 +52,27 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          EXPECTED="anjiallkumar/telugu-dubbing-ai-r79-5m-stress"
+          sleep 20
           ACTUAL_KERNEL=""
-          for attempt in $(seq 1 12); do
-            echo "R79 kernel resolve attempt $attempt/12"
-
-            # First ask Kaggle directly for the exact kernel. This is more
-            # reliable than the search index immediately after a push.
-            set +e
-            STATUS_OUTPUT="$(kaggle kernels status "$EXPECTED" 2>&1)"
-            STATUS_RC=$?
-            set -e
-            printf '%s\n' "$STATUS_OUTPUT"
-            echo "R79_KAGGLE_STATUS_RC=$STATUS_RC"
-
-            if [ "$STATUS_RC" -eq 0 ]; then
-              ACTUAL_KERNEL="$EXPECTED"
-              break
-            fi
-
-            # Fallback: enumerate the user's kernels and match the exact slug.
-            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --page-size 100 2>&1 || true)"
+          for attempt in $(seq 1 10); do
+            echo "R79 kernel resolve attempt ${attempt}/10"
+            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r79 --page-size 50 2>&1 || true)"
             printf '%s\n' "$LIST_OUTPUT"
             ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
-
             if [ -n "$ACTUAL_KERNEL" ]; then
               break
             fi
-
             sleep 20
           done
-
           test -n "$ACTUAL_KERNEL" || {
-            echo "R79_ERROR=Kaggle exact kernel slug still unresolved"
+            echo "R79_ERROR=Exact Kaggle kernel slug not found"
             exit 1
           }
-
           echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
           echo "R79_KAGGLE_KERNEL_RESOLVED=$ACTUAL_KERNEL"
 
-
       - name: Stream R79 kernel logs
-        if: success()
+        if: always()
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
