@@ -731,9 +731,9 @@ try:
     segment_meta = []
     MAX_WINDOW_EXPANSION = 1.50
     MAX_EDGE_BORROW = 0.75
-    MAX_DYNAMIC_MERGE_SECONDS = 7.00
-    MAX_DYNAMIC_MERGE_WORDS = 22
-    MAX_DYNAMIC_MERGE_GAP = 1.25
+    MAX_DYNAMIC_MERGE_SECONDS = 10.00
+    MAX_DYNAMIC_MERGE_WORDS = 32
+    MAX_DYNAMIC_MERGE_GAP = 1.50
     dynamic_merge_count = 0
 
     # TTS preflight is adaptive: when a translated segment cannot fit at the
@@ -792,7 +792,6 @@ try:
                     and combined_duration <= MAX_DYNAMIC_MERGE_SECONDS
                     and combined_words <= MAX_DYNAMIC_MERGE_WORDS
                 ):
-                    old_text = s["text"]
                     s["end"] = nxt["end"]
                     s["text"] = (str(s["text"]) + " " + str(nxt["text"])).strip()
                     s["english"] = (str(s["english"]) + " " + str(nxt["english"])).strip()
@@ -803,6 +802,9 @@ try:
                         f"gap={gap:.3f}s combined_window={combined_duration:.3f}s "
                         f"combined_words={combined_words}"
                     )
+                    # Re-run TTS preflight on the enlarged segment. If it is
+                    # still too tight, the next loop can absorb one more
+                    # neighboring segment instead of failing prematurely.
                     continue
 
             # Last-segment rescue: merge the final segment backward, then
