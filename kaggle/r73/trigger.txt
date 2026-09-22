@@ -1,0 +1,1 @@
+R73 trigger after slug verification
