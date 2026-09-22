@@ -14,7 +14,10 @@ TRANSLATION_DS = "anjiallkumar/indictrans2-indic-en-dist-200m"
 
 CLIP_SECONDS = 300.0
 VOICE = "en-IN-PrabhatNeural"
-MAX_TTS_SPEED = 1.20
+# R79 allows a modest 1.25x post-TTS timing fit for dense English
+# segments. This avoids over-merging contiguous speech while keeping the
+# 1.35x quality-audit hard limit as a separate safety boundary.
+MAX_TTS_SPEED = 1.25
 WORD_GAP_THRESHOLD = 0.40
 MAX_WORDS_PER_SEGMENT = 12
 MAX_SEGMENT_SECONDS = 4.80
@@ -748,6 +751,7 @@ try:
         log(f"R79_TRANSLATION_CANDIDATE_{i}={refined}")
         if before != refined:
             log(f"R79_QUALITY_REFINED_{i}={refined}")
+    log(f"R79_TTS_SPEED_CAP={MAX_TTS_SPEED:.2f}x")
     log("R79_TRANSLATION_QUALITY_COMPLETE")
     log("R79_NATURALIZATION_COMPLETE")
     (WORK / "r79_segment_manifest.json").write_text(
