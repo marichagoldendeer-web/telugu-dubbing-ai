@@ -59,22 +59,22 @@ jobs:
 
             # First ask Kaggle directly for the exact kernel. This is more
             # reliable than the search index immediately after a push.
-            STATUS_OUTPUT="$(kaggle kernels status "$EXPECTED" 2>&1 || true)"
-            printf '%s
-' "$STATUS_OUTPUT"
+            set +e
+            STATUS_OUTPUT="$(kaggle kernels status "$EXPECTED" 2>&1)"
+            STATUS_RC=$?
+            set -e
+            printf '%s\n' "$STATUS_OUTPUT"
+            echo "R79_KAGGLE_STATUS_RC=$STATUS_RC"
 
-            if printf '%s
-' "$STATUS_OUTPUT" | grep -qiE 'status:|running|queued|complete|error|failed'; then
+            if [ "$STATUS_RC" -eq 0 ]; then
               ACTUAL_KERNEL="$EXPECTED"
               break
             fi
 
             # Fallback: enumerate the user's kernels and match the exact slug.
             LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --page-size 100 2>&1 || true)"
-            printf '%s
-' "$LIST_OUTPUT"
-            ACTUAL_KERNEL="$(printf '%s
-' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
+            printf '%s\n' "$LIST_OUTPUT"
+            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
 
             if [ -n "$ACTUAL_KERNEL" ]; then
               break
