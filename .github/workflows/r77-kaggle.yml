@@ -1,5 +1,9 @@
 name: R77 Quality Telugu to English Dubbing
 
+concurrency:
+  group: r77-kaggle
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
