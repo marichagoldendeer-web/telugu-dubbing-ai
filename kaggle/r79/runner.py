@@ -170,7 +170,7 @@ try:
     LOG.write_text("", encoding="utf-8")
     log("=" * 78)
     log("R79 — TIMED TELUGU → ENGLISH DUBBING WITH MUSIC BED")
-    log("RUNNER_REVISION=R79-MUSIC-BED-CENTER-SUPPRESSION")
+    log("RUNNER_REVISION=R79-LOOPED-STRESS-INPUT-MUSIC-BED")
     log("=" * 78)
 
     log("\n[1] RUNTIME / GPU")
@@ -188,14 +188,46 @@ try:
     if not video_root or not asr_root or not translation_root:
         raise FileNotFoundError("One or more required datasets are missing")
 
-    video = sorted(video_root.rglob("*.mp4"))[0]
-    source_duration = media_duration(video)
+    original_video = sorted(video_root.rglob("*.mp4"))[0]
+    source_duration = media_duration(original_video)
     log(f"SOURCE_VIDEO_DURATION={source_duration:.3f}s")
+
+    # R79 is an engineering stress test and requires a 5-minute working input.
+    # Keep the immutable R52 dataset untouched. If it is shorter than 5 minutes,
+    # create a temporary looped source in /kaggle/working and use that for the
+    # complete downstream pipeline. This is NOT a real long-form content test;
+    # it is explicitly a pipeline-duration/stability test.
+    video = original_video
     if source_duration < CLIP_SECONDS - 0.05:
-        raise RuntimeError(
-            f"Source video is only {source_duration:.3f}s; "
-            f"R79 requires at least {CLIP_SECONDS:.1f}s for the 5-minute stress test"
-        )
+        stress_video = WORK / "r79_stress_source_5m.mp4"
+        log("R79_INPUT_MODE=LOOPED_STRESS_SOURCE")
+        log(f"R79_ORIGINAL_SOURCE_DURATION={source_duration:.3f}s")
+        log(f"R79_STRESS_TARGET_DURATION={CLIP_SECONDS:.3f}s")
+        rc = run_cmd([
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", str(original_video),
+            "-t", str(CLIP_SECONDS),
+            "-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(stress_video)
+        ], timeout=900)
+        if rc != 0 or not stress_video.exists():
+            raise RuntimeError("5-minute looped stress source creation failed")
+        stress_duration = media_duration(stress_video)
+        log(f"R79_STRESS_SOURCE={stress_video}")
+        log(f"R79_STRESS_SOURCE_DURATION={stress_duration:.3f}s")
+        if not (CLIP_SECONDS - 0.50 <= stress_duration <= CLIP_SECONDS + 0.05):
+            raise RuntimeError(
+                f"Looped stress source duration invalid: {stress_duration:.3f}s; "
+                f"expected approximately {CLIP_SECONDS:.1f}s"
+            )
+        video = stress_video
+    else:
+        log("R79_INPUT_MODE=NATIVE_5M_SOURCE")
+
     nemo_model_path = sorted(asr_root.rglob("*.nemo"))[0]
     configs = sorted(translation_root.rglob("config.json"))
     model_dirs = []
