@@ -797,8 +797,8 @@ try:
         "-i", str(dub_audio), "-i", str(music_bed),
         "-filter_complex",
         "[0:a]volume=1.0[dub];[1:a]volume=0.32[music];"
-        "[dub][music]amix=inputs=2:duration=longest:dropout_transition=0,"
-        "alimiter=limit=0.95,atrim=duration={CLIP_SECONDS:.3f},asetpts=PTS-STARTPTS[out]",
+        f"[dub][music]amix=inputs=2:duration=longest:dropout_transition=0,"
+        f"alimiter=limit=0.95,atrim=duration={CLIP_SECONDS:.3f},asetpts=PTS-STARTPTS[out]",
         "-map", "[out]", "-ar", "48000", "-ac", "2",
         "-c:a", "pcm_s16le", str(final_audio)
     ], timeout=240)
