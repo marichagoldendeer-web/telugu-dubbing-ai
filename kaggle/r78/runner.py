@@ -729,20 +729,50 @@ try:
 
     positioned = []
     segment_meta = []
+    MAX_WINDOW_EXPANSION = 1.50  # seconds borrowed from adjacent source silence
+    MAX_EDGE_BORROW = 0.75       # keep any single side's pre/post-roll modest
+
     for i, s in enumerate(segments, 1):
         raw = WORK / f"r78_tts_{i:02d}_raw.mp3"
         fit = WORK / f"r78_tts_{i:02d}_fit.wav"
         awaitable = synthesize(s["english"], VOICE, raw)
         asyncio.run(awaitable)
         actual = media_duration(raw)
-        target = max(0.30, s["end"] - s["start"])
+        base_start = float(s["start"])
+        base_end = float(s["end"])
+        base_target = max(0.30, base_end - base_start)
         if actual <= 0:
             raise RuntimeError(f"TTS duration unavailable for segment {i}")
 
+        # R78 corrective timing: do not cut speech merely because the source
+        # word-timestamp window is a little too tight. First try to borrow
+        # a modest amount of adjacent source silence, while never crossing
+        # into another speech segment. This keeps the natural TTS rate capped
+        # at 1.20x and preserves the original speech order.
+        minimum_window_for_cap = actual / MAX_TTS_SPEED
+        required_extra = max(0.0, minimum_window_for_cap - base_target)
+
+        prev_boundary = 0.0 if i == 1 else float(segments[i - 2]["end"])
+        next_boundary = CLIP_SECONDS if i == len(segments) else float(segments[i]["start"])
+        available_before = min(MAX_EDGE_BORROW, max(0.0, base_start - prev_boundary))
+        available_after = min(MAX_EDGE_BORROW, max(0.0, next_boundary - base_end))
+        expansion = min(MAX_WINDOW_EXPANSION, required_extra, available_before + available_after)
+
+        take_before = min(available_before, expansion)
+        take_after = min(available_after, max(0.0, expansion - take_before))
+
+        timing_start = base_start - take_before
+        timing_end = base_end + take_after
+        target = max(0.30, timing_end - timing_start)
         speed = max(1.0, actual / target)
+
         if speed > MAX_TTS_SPEED:
-            log(f"TTS_{i}_QUALITY_WARNING=speed {speed:.3f} exceeds cap {MAX_TTS_SPEED:.2f}")
+            log(
+                f"TTS_{i}_QUALITY_WARNING=required {speed:.3f}x remains above cap "
+                f"after elastic-window expansion; expansion={expansion:.3f}s"
+            )
             speed = MAX_TTS_SPEED
+
         chain = atempo_chain(speed)
         pad_dur = max(0.0, target)
         af = f"{chain},apad=pad_dur={pad_dur:.6f},atrim=duration={target:.6f},asetpts=PTS-STARTPTS"
@@ -755,13 +785,24 @@ try:
         if rc != 0 or not fit.exists():
             raise RuntimeError(f"Timing fit failed for segment {i}")
 
-        positioned.append((s["start"], fit))
+        positioned.append((timing_start, fit))
         s["tts_duration_raw"] = actual
+        s["source_start"] = base_start
+        s["source_end"] = base_end
+        s["tts_window_start"] = timing_start
+        s["tts_window_end"] = timing_end
         s["target_duration"] = target
+        s["timing_expansion"] = expansion
+        s["timing_borrow_before"] = take_before
+        s["timing_borrow_after"] = take_after
         s["speed_factor"] = speed
         s["tts_file"] = str(fit)
         segment_meta.append(s)
-        log(f"TTS_{i}: raw={actual:.3f}s target={target:.3f}s speed={speed:.3f}")
+        log(
+            f"TTS_{i}: raw={actual:.3f}s base_target={base_target:.3f}s "
+            f"window={timing_start:.3f}-{timing_end:.3f} target={target:.3f}s "
+            f"expansion={expansion:.3f}s speed={speed:.3f}"
+        )
 
     (WORK / "r78_segment_manifest.json").write_text(
         json.dumps(segment_meta, ensure_ascii=False, indent=2), encoding="utf-8"
