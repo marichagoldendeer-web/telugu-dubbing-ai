@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r73-orphan-segment-merge
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r73-edge-repeat-cleanup
 
 jobs:
   r73:
@@ -47,7 +47,7 @@ jobs:
           sleep 15
           LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r73 --page-size 20)"
           printf '%s\n' "$LIST_OUTPUT"
-          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r73-orphan-segment-merge" {print $1; exit}')"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r73-edge-repeat-cleanup" {print $1; exit}')"
           test -n "$ACTUAL_KERNEL"
           echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
       - name: Stream R73 kernel logs
