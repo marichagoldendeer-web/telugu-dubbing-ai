@@ -16,8 +16,8 @@ CLIP_SECONDS = 60.0
 VOICE = "en-IN-PrabhatNeural"
 MAX_TTS_SPEED = 1.20
 WORD_GAP_THRESHOLD = 0.40
-MAX_WORDS_PER_SEGMENT = 8
-MAX_SEGMENT_SECONDS = 3.20
+MAX_WORDS_PER_SEGMENT = 12
+MAX_SEGMENT_SECONDS = 4.80
 MIN_SEGMENT_SECONDS = 0.70
 OVERLAP_MIN_WORDS = 3
 OVERLAP_MAX_WORDS = 8
@@ -729,12 +729,23 @@ try:
 
     positioned = []
     segment_meta = []
-    MAX_WINDOW_EXPANSION = 1.50  # seconds borrowed from adjacent source silence
-    MAX_EDGE_BORROW = 0.75       # keep any single side's pre/post-roll modest
+    MAX_WINDOW_EXPANSION = 1.50
+    MAX_EDGE_BORROW = 0.75
+    MAX_DYNAMIC_MERGE_SECONDS = 7.00
+    MAX_DYNAMIC_MERGE_WORDS = 22
+    MAX_DYNAMIC_MERGE_GAP = 1.25
+    dynamic_merge_count = 0
 
-    for i, s in enumerate(segments, 1):
-        raw = WORK / f"r78_tts_{i:02d}_raw.mp3"
-        fit = WORK / f"r78_tts_{i:02d}_fit.wav"
+    # TTS preflight is adaptive: when a translated segment cannot fit at the
+    # 1.20x speed ceiling, first expand into nearby silence. If that is still
+    # insufficient, merge it with an adjacent segment and retry. Concatenating
+    # already-translated English preserves the meaning without inventing text.
+    i = 0
+    while i < len(segments):
+        s = segments[i]
+        raw = WORK / f"r78_tts_{i+1:02d}_raw.mp3"
+        fit = WORK / f"r78_tts_{i+1:02d}_fit.wav"
+
         awaitable = synthesize(s["english"], VOICE, raw)
         asyncio.run(awaitable)
         actual = media_duration(raw)
@@ -742,40 +753,88 @@ try:
         base_end = float(s["end"])
         base_target = max(0.30, base_end - base_start)
         if actual <= 0:
-            raise RuntimeError(f"TTS duration unavailable for segment {i}")
+            raise RuntimeError(f"TTS duration unavailable for segment {i+1}")
 
-        # R78 corrective timing: do not cut speech merely because the source
-        # word-timestamp window is a little too tight. First try to borrow
-        # a modest amount of adjacent source silence, while never crossing
-        # into another speech segment. This keeps the natural TTS rate capped
-        # at 1.20x and preserves the original speech order.
         minimum_window_for_cap = actual / MAX_TTS_SPEED
         required_extra = max(0.0, minimum_window_for_cap - base_target)
 
-        prev_boundary = 0.0 if i == 1 else float(segments[i - 2]["end"])
-        next_boundary = CLIP_SECONDS if i == len(segments) else float(segments[i]["start"])
+        prev_boundary = 0.0 if i == 0 else float(segments[i - 1]["end"])
+        next_boundary = CLIP_SECONDS if i == len(segments) - 1 else float(segments[i + 1]["start"])
         available_before = min(MAX_EDGE_BORROW, max(0.0, base_start - prev_boundary))
-        # To prevent two neighboring segments from borrowing the same gap,
-        # internal segments borrow only from their leading gap. The final
-        # segment may also use trailing silence up to the 0.75s side cap.
         available_after = (
             min(MAX_EDGE_BORROW, max(0.0, next_boundary - base_end))
-            if i == len(segments) else 0.0
+            if i == len(segments) - 1 else 0.0
         )
-        expansion = min(MAX_WINDOW_EXPANSION, required_extra, available_before + available_after)
+        expansion = min(
+            MAX_WINDOW_EXPANSION,
+            required_extra,
+            available_before + available_after,
+        )
 
         take_before = min(available_before, expansion)
         take_after = min(available_after, max(0.0, expansion - take_before))
-
         timing_start = base_start - take_before
         timing_end = base_end + take_after
         target = max(0.30, timing_end - timing_start)
         speed = max(1.0, actual / target)
 
         if speed > MAX_TTS_SPEED + 1e-6:
+            # Prefer merging with the following segment. This keeps already
+            # processed earlier windows intact and preserves chronology.
+            merged = False
+            if i + 1 < len(segments):
+                nxt = segments[i + 1]
+                gap = max(0.0, float(nxt["start"]) - base_end)
+                combined_words = len(_tokens(str(s["english"]))) + len(_tokens(str(nxt["english"])))
+                combined_duration = float(nxt["end"]) - base_start
+                if (
+                    gap <= MAX_DYNAMIC_MERGE_GAP
+                    and combined_duration <= MAX_DYNAMIC_MERGE_SECONDS
+                    and combined_words <= MAX_DYNAMIC_MERGE_WORDS
+                ):
+                    old_text = s["text"]
+                    s["end"] = nxt["end"]
+                    s["text"] = (str(s["text"]) + " " + str(nxt["text"])).strip()
+                    s["english"] = (str(s["english"]) + " " + str(nxt["english"])).strip()
+                    del segments[i + 1]
+                    dynamic_merge_count += 1
+                    log(
+                        f"R78_TTS_MERGE_{dynamic_merge_count}=segments {i+1}+{i+2} "
+                        f"gap={gap:.3f}s combined_window={combined_duration:.3f}s "
+                        f"combined_words={combined_words}"
+                    )
+                    continue
+
+            # Last-segment rescue: merge the final segment backward, then
+            # restart TTS preflight so all manifests/positions are rebuilt.
+            if i == len(segments) - 1 and i > 0:
+                prev = segments[i - 1]
+                gap = max(0.0, base_start - float(prev["end"]))
+                combined_words = len(_tokens(str(prev["english"]))) + len(_tokens(str(s["english"])))
+                combined_duration = base_end - float(prev["start"])
+                if (
+                    gap <= MAX_DYNAMIC_MERGE_GAP
+                    and combined_duration <= MAX_DYNAMIC_MERGE_SECONDS
+                    and combined_words <= MAX_DYNAMIC_MERGE_WORDS
+                ):
+                    prev["end"] = s["end"]
+                    prev["text"] = (str(prev["text"]) + " " + str(s["text"])).strip()
+                    prev["english"] = (str(prev["english"]) + " " + str(s["english"])).strip()
+                    del segments[i]
+                    dynamic_merge_count += 1
+                    positioned.clear()
+                    segment_meta.clear()
+                    log(
+                        f"R78_TTS_MERGE_{dynamic_merge_count}=segments {i}+{i+1} "
+                        f"gap={gap:.3f}s combined_window={combined_duration:.3f}s "
+                        f"combined_words={combined_words} restart=True"
+                    )
+                    i = 0
+                    continue
+
             raise RuntimeError(
-                f"Segment {i} still requires {speed:.3f}x TTS after using "
-                f"{expansion:.3f}s of available silence; refusing to clip speech"
+                f"Segment {i+1} requires {speed:.3f}x TTS after "
+                f"{expansion:.3f}s elastic timing and could not be safely merged"
             )
 
         chain = atempo_chain(speed)
@@ -788,7 +847,7 @@ try:
             str(fit)
         ], timeout=120)
         if rc != 0 or not fit.exists():
-            raise RuntimeError(f"Timing fit failed for segment {i}")
+            raise RuntimeError(f"Timing fit failed for segment {i+1}")
 
         positioned.append((timing_start, fit))
         s["tts_duration_raw"] = actual
@@ -802,12 +861,15 @@ try:
         s["timing_borrow_after"] = take_after
         s["speed_factor"] = speed
         s["tts_file"] = str(fit)
-        segment_meta.append(s)
+        segment_meta.append(dict(s))
         log(
-            f"TTS_{i}: raw={actual:.3f}s base_target={base_target:.3f}s "
+            f"TTS_{i+1}: raw={actual:.3f}s base_target={base_target:.3f}s "
             f"window={timing_start:.3f}-{timing_end:.3f} target={target:.3f}s "
             f"expansion={expansion:.3f}s speed={speed:.3f}"
         )
+        i += 1
+
+    log(f"R78_TTS_DYNAMIC_MERGE_COUNT={dynamic_merge_count}")
 
     # Verify the elastic TTS windows themselves remain ordered and non-overlapping.
     previous_tts_end = 0.0
@@ -962,6 +1024,7 @@ try:
     log(f"R78_AUDIT_MAX_SOURCE_GAP={max_source_gap:.3f}s")
     log(f"R78_AUDIT_MAX_REQUIRED_TTS_SPEED={max_required_speed:.3f}x")
     log(f"R78_AUDIT_MAX_TIMING_EXPANSION={max_timing_expansion:.3f}s")
+    log(f"R78_AUDIT_DYNAMIC_TTS_MERGES={dynamic_merge_count}")
     log(f"R78_AUDIT_MAX_ENGLISH_WORDS_PER_SECOND={max_words_per_second:.3f}")
     log(f"R78_AUDIT_AVG_ENGLISH_WORDS_PER_SECOND={avg_translation_wps:.3f}")
 
@@ -985,6 +1048,7 @@ try:
         "max_source_gap_seconds": max_source_gap,
         "max_required_tts_speed": max_required_speed,
         "max_timing_expansion_seconds": max_timing_expansion,
+        "dynamic_tts_merge_count": dynamic_merge_count,
         "max_english_words_per_second": max_words_per_second,
         "average_english_words_per_second": avg_translation_wps,
         "long_silence_events": silence_events,
