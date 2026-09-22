@@ -770,8 +770,11 @@ try:
     segment_meta = []
     MAX_WINDOW_EXPANSION = 1.50
     MAX_EDGE_BORROW = 0.75
-    MAX_DYNAMIC_MERGE_SECONDS = 10.00
-    MAX_DYNAMIC_MERGE_WORDS = 32
+    # Some short translated chunks remain too dense even after one
+    # neighboring merge. Allow one additional adjacent merge when needed,
+    # while keeping a bounded sentence-sized window for TTS naturalness.
+    MAX_DYNAMIC_MERGE_SECONDS = 15.00
+    MAX_DYNAMIC_MERGE_WORDS = 48
     MAX_DYNAMIC_MERGE_GAP = 1.50
     dynamic_merge_count = 0
 
