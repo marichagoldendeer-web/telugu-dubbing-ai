@@ -1,0 +1,105 @@
+name: R78 Quality Telugu to English Dubbing
+
+concurrency:
+  group: r78-kaggle
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r78/**"
+      - ".github/workflows/r78-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r78-60s-quality-audit
+
+jobs:
+  r78:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+      - name: Install Kaggle CLI 2.2.2
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          kaggle --version
+      - name: Push R78 to Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          mkdir -p kaggle-output
+          kaggle kernels push -p kaggle/r78 2>&1 | tee kaggle-output/r78_push.log
+          rc=${PIPESTATUS[0]}
+          echo "push_returncode=${rc}" | tee -a kaggle-output/r78_push.log
+          exit ${rc}
+      - name: Resolve R78 Kaggle kernel
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 15
+          LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r78 --page-size 20)"
+          printf '%s\n' "$LIST_OUTPUT"
+          ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r78-60s-quality-audit" {print $1; exit}')"
+          test -n "$ACTUAL_KERNEL"
+          echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
+      - name: Stream R78 kernel logs
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          mkdir -p kaggle-output
+          rm -f kaggle-output/r78_kaggle_logs.txt
+          sleep 45
+          timeout 1800 kaggle kernels logs "$KAGGLE_KERNEL" --follow --interval 10 2>&1 | tee kaggle-output/r78_kaggle_logs.txt
+          rc=${PIPESTATUS[0]}
+          echo "logs_follow_rc=$rc" | tee -a kaggle-output/r78_kaggle_logs.txt
+          if grep -q "R78 DIAGNOSTIC COMPLETE" kaggle-output/r78_kaggle_logs.txt; then exit 0; fi
+          if grep -q "R78 DIAGNOSTIC FAILED" kaggle-output/r78_kaggle_logs.txt; then exit 1; fi
+          sleep 120
+          kaggle kernels logs "$KAGGLE_KERNEL" 2>&1 | tee -a kaggle-output/r78_kaggle_logs.txt
+          if grep -q "R78 DIAGNOSTIC COMPLETE" kaggle-output/r78_kaggle_logs.txt; then exit 0; fi
+          if grep -q "R78 DIAGNOSTIC FAILED" kaggle-output/r78_kaggle_logs.txt; then exit 1; fi
+          exit 1
+      - name: Upload R78 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r78-diagnostics
+          path: |
+            kaggle-output/r78_kaggle_logs.txt
+            kaggle-output/r78_push.log
+          if-no-files-found: warn
+      - name: Download R78 generated outputs
+        if: success()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p kaggle-output
+          kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output
+          find kaggle-output -maxdepth 3 -type f -print
+        continue-on-error: true
+      - name: Upload R78 generated outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r78-generated-outputs
+          path: |
+            kaggle-output/**/*.mp4
+            kaggle-output/**/*.wav
+            kaggle-output/**/*.json
+            kaggle-output/**/*.txt
+          if-no-files-found: warn
