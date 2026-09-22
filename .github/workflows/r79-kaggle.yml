@@ -52,25 +52,45 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          # Kaggle may take several seconds to index a newly pushed kernel.
-          # Retry the exact slug instead of assuming the first list call is ready.
+          EXPECTED="anjiallkumar/telugu-dubbing-ai-r79-5m-stress"
           ACTUAL_KERNEL=""
-          for attempt in $(seq 1 10); do
-            echo "R79 kernel resolve attempt $attempt/10"
-            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r79 --page-size 50 || true)"
-            printf '%s\n' "$LIST_OUTPUT"
-            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
+          for attempt in $(seq 1 12); do
+            echo "R79 kernel resolve attempt $attempt/12"
+
+            # First ask Kaggle directly for the exact kernel. This is more
+            # reliable than the search index immediately after a push.
+            STATUS_OUTPUT="$(kaggle kernels status "$EXPECTED" 2>&1 || true)"
+            printf '%s
+' "$STATUS_OUTPUT"
+
+            if printf '%s
+' "$STATUS_OUTPUT" | grep -qiE 'status:|running|queued|complete|error|failed'; then
+              ACTUAL_KERNEL="$EXPECTED"
+              break
+            fi
+
+            # Fallback: enumerate the user's kernels and match the exact slug.
+            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --page-size 100 2>&1 || true)"
+            printf '%s
+' "$LIST_OUTPUT"
+            ACTUAL_KERNEL="$(printf '%s
+' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r79-5m-stress" {print $1; exit}')"
+
             if [ -n "$ACTUAL_KERNEL" ]; then
               break
             fi
-            sleep 30
+
+            sleep 20
           done
+
           test -n "$ACTUAL_KERNEL" || {
-            echo "R79_ERROR=Kaggle kernel slug was not discoverable after 10 attempts"
+            echo "R79_ERROR=Kaggle exact kernel slug still unresolved"
             exit 1
           }
+
           echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
           echo "R79_KAGGLE_KERNEL_RESOLVED=$ACTUAL_KERNEL"
+
 
       - name: Stream R79 kernel logs
         if: success()
