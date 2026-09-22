@@ -772,12 +772,11 @@ try:
         target = max(0.30, timing_end - timing_start)
         speed = max(1.0, actual / target)
 
-        if speed > MAX_TTS_SPEED:
-            log(
-                f"TTS_{i}_QUALITY_WARNING=required {speed:.3f}x remains above cap "
-                f"after elastic-window expansion; expansion={expansion:.3f}s"
+        if speed > MAX_TTS_SPEED + 1e-6:
+            raise RuntimeError(
+                f"Segment {i} still requires {speed:.3f}x TTS after using "
+                f"{expansion:.3f}s of available silence; refusing to clip speech"
             )
-            speed = MAX_TTS_SPEED
 
         chain = atempo_chain(speed)
         pad_dur = max(0.0, target)
@@ -809,6 +808,18 @@ try:
             f"window={timing_start:.3f}-{timing_end:.3f} target={target:.3f}s "
             f"expansion={expansion:.3f}s speed={speed:.3f}"
         )
+
+    # Verify the elastic TTS windows themselves remain ordered and non-overlapping.
+    previous_tts_end = 0.0
+    for i, seg in enumerate(segment_meta, 1):
+        tts_start = float(seg["tts_window_start"])
+        tts_end = float(seg["tts_window_end"])
+        if tts_start < previous_tts_end - 0.01:
+            raise RuntimeError(f"TTS timing windows overlap at segment {i}")
+        if tts_end <= tts_start:
+            raise RuntimeError(f"TTS timing window invalid at segment {i}")
+        previous_tts_end = tts_end
+        log(f"R78_TTS_WINDOW_{i}={tts_start:.3f}-{tts_end:.3f}")
 
     (WORK / "r78_segment_manifest.json").write_text(
         json.dumps(segment_meta, ensure_ascii=False, indent=2), encoding="utf-8"
