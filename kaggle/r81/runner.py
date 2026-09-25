@@ -349,7 +349,122 @@ try:
     except Exception as exc:
         log(f"TIMESTAMP_DECODER_CONFIGURE_WARNING={type(exc).__name__}: {exc}")
 
-    # NeMo's transcribe() documentation recommends short audio fragments (roughly\n    # 5-25s). R81 previously sent the entire 6m19s recording as one tensor;\n    # the conformer attention then attempted a multi-GB allocation and exhausted\n    # the 14.56 GiB T4. Use deterministic 20s chunks with a small overlap so\n    # memory stays bounded while timestamps remain in the native source clock.\n    ASR_CHUNK_SECONDS = 20.0\n    ASR_CHUNK_OVERLAP = 0.35\n    log(f"R81_ASR_CHUNK_SECONDS={ASR_CHUNK_SECONDS:.2f}")\n    log(f"R81_ASR_CHUNK_OVERLAP={ASR_CHUNK_OVERLAP:.2f}")\n\n    segments = []\n    timestamp_stride = 1.0\n    try:\n        subsampling = float(getattr(model.encoder, "subsampling_factor", 1) or 1)\n        window_stride = float(model.cfg.preprocessor.window_stride)\n        timestamp_stride = subsampling * window_stride\n        log(f"TIMESTAMP_STRIDE={timestamp_stride:.6f}s subsampling_factor={subsampling:g} window_stride={window_stride:g}")\n    except Exception as exc:\n        log(f"TIMESTAMP_STRIDE_WARNING={type(exc).__name__}: {exc}")\n\n    asr_chunk_dir = WORK / "r81_asr_chunks"\n    asr_chunk_dir.mkdir(parents=True, exist_ok=True)\n    all_words = []\n    fallback_segments = []\n    chunk_start = 0.0\n    chunk_index = 0\n\n    while chunk_start < CLIP_SECONDS - 0.01:\n        chunk_index += 1\n        chunk_end = min(CLIP_SECONDS, chunk_start + ASR_CHUNK_SECONDS)\n        chunk_duration = chunk_end - chunk_start\n        chunk_path = asr_chunk_dir / f"chunk_{chunk_index:03d}.wav"\n        log(f"R81_ASR_CHUNK_{chunk_index}=start={chunk_start:.3f}s end={chunk_end:.3f}s duration={chunk_duration:.3f}s")\n\n        rc = run_cmd([\n            "ffmpeg", "-y", "-ss", f"{chunk_start:.6f}", "-t", f"{chunk_duration:.6f}",\n            "-i", str(smoke), "-ac", "1", "-ar", "16000",\n            "-c:a", "pcm_s16le", str(chunk_path)\n        ], timeout=120)\n        if rc != 0 or not chunk_path.exists():\n            raise RuntimeError(f"R81 ASR chunk extraction failed at chunk {chunk_index}")\n\n        try:\n            result = model.transcribe(\n                [str(chunk_path)],\n                batch_size=1,\n                num_workers=0,\n                logprobs=False,\n                language_id="te",\n                return_hypotheses=True,\n                verbose=False,\n            )\n            hyp = result[0]\n            if isinstance(hyp, (list, tuple)) and len(hyp) == 1:\n                hyp = hyp[0]\n            log(f"R81_ASR_CHUNK_{chunk_index}_HYPOTHESIS_TYPE={type(hyp).__name__}")\n\n            chunk_words = []\n            for attr in ("timestep", "timestamp"):\n                data = getattr(hyp, attr, None)\n                if isinstance(data, dict):\n                    log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_KEYS={list(data.keys())}")\n                    raw_words = data.get("word")\n                    if isinstance(raw_words, list) and raw_words:\n                        log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_WORD_SAMPLE={raw_words[0]}")\n                    chunk_words = normalize_words(raw_words, time_stride=timestamp_stride)\n                    if chunk_words:\n                        log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_WORD_COUNT={len(chunk_words)}")\n                        break\n\n            if chunk_words:\n                for w in chunk_words:\n                    w["start"] += chunk_start\n                    w["end"] += chunk_start\n                    if w["end"] > chunk_start - 0.05 and w["start"] < CLIP_SECONDS + 0.05:\n                        all_words.append(w)\n            else:\n                chunk_segments = []\n                for attr in ("timestep", "timestamp"):\n                    data = getattr(hyp, attr, None)\n                    if isinstance(data, dict):\n                        chunk_segments = normalize_segments(data.get("segment"))\n                        if chunk_segments:\n                            log(f"R81_ASR_CHUNK_{chunk_index}_SEGMENT_SOURCE={attr.upper()}")\n                            break\n                for s in chunk_segments:\n                    s["start"] += chunk_start\n                    s["end"] += chunk_start\n                    fallback_segments.append(s)\n\n            if not chunk_words and not fallback_segments:\n                log(f"R81_ASR_CHUNK_{chunk_index}_WARNING=no timestamps returned")\n        finally:\n            # Release per-chunk tensors before the next 20s inference.\n            try:\n                del result, hyp\n            except Exception:\n                pass\n            try:\n                import gc\n                gc.collect()\n                if torch.cuda.is_available():\n                    torch.cuda.empty_cache()\n            except Exception as exc:\n                log(f"R81_ASR_CHUNK_{chunk_index}_CACHE_WARNING={type(exc).__name__}: {exc}")\n\n        # Overlap only for boundary context; the downstream adjacent-word\n        # de-duplication removes any repeated phrase introduced by overlap.\n        next_start = chunk_end - ASR_CHUNK_OVERLAP\n        if next_start <= chunk_start + 0.01:\n            next_start = chunk_end\n        chunk_start = next_start\n\n    log(f"R81_ASR_CHUNK_COUNT={chunk_index}")\n    log(f"R81_ASR_TOTAL_RAW_WORDS={len(all_words)}")\n    log(f"R81_ASR_TOTAL_FALLBACK_SEGMENTS={len(fallback_segments)}")\n\n    # R81: prefer word timestamps whenever NeMo provides them.\n    # R68 proved that word timestamps give substantially better timing\n    # boundaries than one large segment-level timestamp.\n    words = sorted(all_words, key=lambda x: (x["start"], x["end"]))\n    if words:\n        segments = words_to_segments(\n            words,\n            gap_threshold=WORD_GAP_THRESHOLD,\n            max_words=MAX_WORDS_PER_SEGMENT,\n        )\n        # Split oversized word groups by duration as well.\n        refined = []\n        for s in segments:\n            group_words = [w for w in words if w["start"] >= s["start"] - 1e-6 and w["end"] <= s["end"] + 1e-6]\n            current = []\n            for w in group_words:\n                if current:\n                    candidate_end = w["end"]\n                    candidate_words = len(current) + 1\n                    if (\n                        candidate_words > MAX_WORDS_PER_SEGMENT\n                        or candidate_end - current[0]["start"] > MAX_SEGMENT_SECONDS\n                    ):\n                        refined.append({\n                            "start": current[0]["start"],\n                            "end": current[-1]["end"],\n                            "text": " ".join(x["word"] for x in current).strip(),\n                        })\n                        current = []\n                current.append(w)\n            if current:\n                refined.append({\n                    "start": current[0]["start"],\n                    "end": current[-1]["end"],\n                    "text": " ".join(x["word"] for x in current).strip(),\n                })\n        segments = refined\n        log("SEGMENT_SOURCE=WORD_TIMESTAMPS_CHUNKED")\n    else:\n        segments = fallback_segments\n        if segments:\n            log("SEGMENT_SOURCE=SEGMENT_TIMESTAMPS_CHUNKED_FALLBACK")\n\n    if not segments:
+    # NeMo's transcribe() documentation recommends short audio fragments (roughly
+    # 5-25s). R81 previously sent the entire 6m19s recording as one tensor;
+    # the conformer attention then attempted a multi-GB allocation and exhausted
+    # the 14.56 GiB T4. Use deterministic 20s chunks with a small overlap so
+    # memory stays bounded while timestamps remain in the native source clock.
+    ASR_CHUNK_SECONDS = 20.0
+    ASR_CHUNK_OVERLAP = 0.35
+    log(f"R81_ASR_CHUNK_SECONDS={ASR_CHUNK_SECONDS:.2f}")
+    log(f"R81_ASR_CHUNK_OVERLAP={ASR_CHUNK_OVERLAP:.2f}")
+
+    segments = []
+    timestamp_stride = 1.0
+    try:
+        subsampling = float(getattr(model.encoder, "subsampling_factor", 1) or 1)
+        window_stride = float(model.cfg.preprocessor.window_stride)
+        timestamp_stride = subsampling * window_stride
+        log(f"TIMESTAMP_STRIDE={timestamp_stride:.6f}s subsampling_factor={subsampling:g} window_stride={window_stride:g}")
+    except Exception as exc:
+        log(f"TIMESTAMP_STRIDE_WARNING={type(exc).__name__}: {exc}")
+
+    asr_chunk_dir = WORK / "r81_asr_chunks"
+    asr_chunk_dir.mkdir(parents=True, exist_ok=True)
+    all_words = []
+    fallback_segments = []
+    chunk_start = 0.0
+    chunk_index = 0
+
+    while chunk_start < CLIP_SECONDS - 0.01:
+        chunk_index += 1
+        chunk_end = min(CLIP_SECONDS, chunk_start + ASR_CHUNK_SECONDS)
+        chunk_duration = chunk_end - chunk_start
+        chunk_path = asr_chunk_dir / f"chunk_{chunk_index:03d}.wav"
+        log(f"R81_ASR_CHUNK_{chunk_index}=start={chunk_start:.3f}s end={chunk_end:.3f}s duration={chunk_duration:.3f}s")
+
+        rc = run_cmd([
+            "ffmpeg", "-y", "-ss", f"{chunk_start:.6f}", "-t", f"{chunk_duration:.6f}",
+            "-i", str(smoke), "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_s16le", str(chunk_path)
+        ], timeout=120)
+        if rc != 0 or not chunk_path.exists():
+            raise RuntimeError(f"R81 ASR chunk extraction failed at chunk {chunk_index}")
+
+        try:
+            result = model.transcribe(
+                [str(chunk_path)],
+                batch_size=1,
+                num_workers=0,
+                logprobs=False,
+                language_id="te",
+                return_hypotheses=True,
+                verbose=False,
+            )
+            hyp = result[0]
+            if isinstance(hyp, (list, tuple)) and len(hyp) == 1:
+                hyp = hyp[0]
+            log(f"R81_ASR_CHUNK_{chunk_index}_HYPOTHESIS_TYPE={type(hyp).__name__}")
+
+            chunk_words = []
+            for attr in ("timestep", "timestamp"):
+                data = getattr(hyp, attr, None)
+                if isinstance(data, dict):
+                    log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_KEYS={list(data.keys())}")
+                    raw_words = data.get("word")
+                    if isinstance(raw_words, list) and raw_words:
+                        log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_WORD_SAMPLE={raw_words[0]}")
+                    chunk_words = normalize_words(raw_words, time_stride=timestamp_stride)
+                    if chunk_words:
+                        log(f"R81_ASR_CHUNK_{chunk_index}_{attr.upper()}_WORD_COUNT={len(chunk_words)}")
+                        break
+
+            if chunk_words:
+                for w in chunk_words:
+                    w["start"] += chunk_start
+                    w["end"] += chunk_start
+                    if w["end"] > chunk_start - 0.05 and w["start"] < CLIP_SECONDS + 0.05:
+                        all_words.append(w)
+            else:
+                chunk_segments = []
+                for attr in ("timestep", "timestamp"):
+                    data = getattr(hyp, attr, None)
+                    if isinstance(data, dict):
+                        chunk_segments = normalize_segments(data.get("segment"))
+                        if chunk_segments:
+                            log(f"R81_ASR_CHUNK_{chunk_index}_SEGMENT_SOURCE={attr.upper()}")
+                            break
+                for s in chunk_segments:
+                    s["start"] += chunk_start
+                    s["end"] += chunk_start
+                    fallback_segments.append(s)
+
+            if not chunk_words and not fallback_segments:
+                log(f"R81_ASR_CHUNK_{chunk_index}_WARNING=no timestamps returned")
+        finally:
+            # Release per-chunk tensors before the next 20s inference.
+            try:
+                del result, hyp
+            except Exception:
+                pass
+            try:
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception as exc:
+                log(f"R81_ASR_CHUNK_{chunk_index}_CACHE_WARNING={type(exc).__name__}: {exc}")
+
+        # Overlap only for boundary context; the downstream adjacent-word
+        # de-duplication removes any repeated phrase introduced by overlap.
+        next_start = chunk_end - ASR_CHUNK_OVERLAP
+        if next_start <= chunk_start + 0.01:
+            next_start = chunk_end
+        chunk_start = next_start
+
+    log(f"R81_ASR_CHUNK_COUNT={chunk_index}")
+    log(f"R81_ASR_TOTAL_RAW_WORDS={len(all_words)}")
+    log(f"R81_ASR_TOTAL_FALLBACK_SEGMENTS={len(fallback_segments)}")\n\n    # R81: prefer word timestamps whenever NeMo provides them.\n    # R68 proved that word timestamps give substantially better timing\n    # boundaries than one large segment-level timestamp.\n    words = sorted(all_words, key=lambda x: (x["start"], x["end"]))\n    if words:\n        segments = words_to_segments(\n            words,\n            gap_threshold=WORD_GAP_THRESHOLD,\n            max_words=MAX_WORDS_PER_SEGMENT,\n        )\n        # Split oversized word groups by duration as well.\n        refined = []\n        for s in segments:\n            group_words = [w for w in words if w["start"] >= s["start"] - 1e-6 and w["end"] <= s["end"] + 1e-6]\n            current = []\n            for w in group_words:\n                if current:\n                    candidate_end = w["end"]\n                    candidate_words = len(current) + 1\n                    if (\n                        candidate_words > MAX_WORDS_PER_SEGMENT\n                        or candidate_end - current[0]["start"] > MAX_SEGMENT_SECONDS\n                    ):\n                        refined.append({\n                            "start": current[0]["start"],\n                            "end": current[-1]["end"],\n                            "text": " ".join(x["word"] for x in current).strip(),\n                        })\n                        current = []\n                current.append(w)\n            if current:\n                refined.append({\n                    "start": current[0]["start"],\n                    "end": current[-1]["end"],\n                    "text": " ".join(x["word"] for x in current).strip(),\n                })\n        segments = refined\n        log("SEGMENT_SOURCE=WORD_TIMESTAMPS_CHUNKED")\n    else:\n        segments = fallback_segments\n        if segments:\n            log("SEGMENT_SOURCE=SEGMENT_TIMESTAMPS_CHUNKED_FALLBACK")\n\n    if not segments:
         raise RuntimeError("NeMo returned no usable segment or word timestamps")
 
     clipped = []
