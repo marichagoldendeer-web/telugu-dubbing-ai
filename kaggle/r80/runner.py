@@ -827,9 +827,11 @@ try:
                     # neighboring segment instead of failing prematurely.
                     continue
 
-            # Last-segment rescue: merge the final segment backward, then
-            # restart TTS preflight so all manifests/positions are rebuilt.
-            if i == len(segments) - 1 and i > 0:
+            # Dense segments are not necessarily the last segment.
+            # If forward merging cannot create a legal TTS window, try merging
+            # the current segment backward as well. Restart the preflight so
+            # previously positioned audio cannot become stale after reindexing.
+            if i > 0:
                 prev = segments[i - 1]
                 gap = max(0.0, base_start - float(prev["end"]))
                 combined_words = len(_tokens(str(prev["english"]))) + len(_tokens(str(s["english"])))
@@ -848,7 +850,7 @@ try:
                     segment_meta.clear()
                     log(
                         f"R80_TTS_MERGE_{dynamic_merge_count}=segments {i}+{i+1} "
-                        f"gap={gap:.3f}s combined_window={combined_duration:.3f}s "
+                        f"direction=backward gap={gap:.3f}s combined_window={combined_duration:.3f}s "
                         f"combined_words={combined_words} restart=True"
                     )
                     i = 0
