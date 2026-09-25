@@ -1,0 +1,17 @@
+{
+  "id": "anjiallkumar/telugu-dubbing-ai-r84-musetalk-benchmark",
+  "title": "Telugu Dubbing AI R84 MuseTalk Benchmark",
+  "code_file": "runner.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "anjiallkumar/r84-r80-dub-input"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
