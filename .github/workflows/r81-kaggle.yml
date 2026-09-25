@@ -1,0 +1,142 @@
+name: R81 Genuine Longform Telugu to English Dubbing
+
+concurrency:
+  group: r81-kaggle
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r81/**"
+      - ".github/workflows/r81-kaggle.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r81-longform
+  KAGGLE_SOURCE_DATASET: anjiallkumar/r81-telugu-longform-source
+
+jobs:
+  r81:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI 2.2.2
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          kaggle --version
+
+      - name: Prepare R81 genuine Telugu longform source dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p r81-source
+          curl -L --fail --retry 3 --retry-delay 3             "https://commons.wikimedia.org/wiki/Special:Redirect/file/Wikisource_introduction_Telugu_tutorial.webm"             -o "r81-source/Wikisource_introduction_Telugu_tutorial.webm"
+          cat > r81-source/dataset-metadata.json <<'JSON'
+          {
+            "title": "R81 Telugu Longform Source",
+            "id": "anjiallkumar/r81-telugu-longform-source",
+            "description": "Genuine Telugu long-form test source: Wikisource introduction Telugu tutorial. Source: Wikimedia Commons. Original work by Saiphani02. Licensed CC BY-SA 4.0. 6m19s, 1920x1080.",
+            "licenses": [{"name": "CC-BY-SA-4.0"}],
+            "keywords": ["telugu", "speech", "dubbing", "longform", "test"]
+          }
+          JSON
+          if kaggle datasets status "$KAGGLE_SOURCE_DATASET" >/dev/null 2>&1; then
+            kaggle datasets version -p r81-source -m "R81 longform source refresh"
+          else
+            kaggle datasets create -p r81-source --public
+          fi
+
+      - name: Push R81 to Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          mkdir -p kaggle-output
+          kaggle kernels push -p kaggle/r81 2>&1 | tee kaggle-output/r81_push.log
+          rc=${PIPESTATUS[0]}
+          echo "push_returncode=${rc}" | tee -a kaggle-output/r81_push.log
+          exit ${rc}
+
+      - name: Resolve R81 Kaggle kernel
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 20
+          ACTUAL_KERNEL=""
+          for attempt in $(seq 1 10); do
+            echo "R81 kernel resolve attempt ${attempt}/10"
+            LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r81 --page-size 50 2>&1 || true)"
+            printf '%s\n' "$LIST_OUTPUT"
+            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r81-longform" {print $1; exit}')"
+            if [ -n "$ACTUAL_KERNEL" ]; then break; fi
+            sleep 20
+          done
+          test -n "$ACTUAL_KERNEL" || { echo "R81_ERROR=Exact Kaggle kernel slug not found"; exit 1; }
+          echo "KAGGLE_KERNEL=$ACTUAL_KERNEL" >> "$GITHUB_ENV"
+
+      - name: Stream R81 kernel logs
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          mkdir -p kaggle-output
+          rm -f kaggle-output/r81_kaggle_logs.txt
+          sleep 45
+          timeout 3600 kaggle kernels logs "$KAGGLE_KERNEL" --follow --interval 10 2>&1 | tee kaggle-output/r81_kaggle_logs.txt
+          rc=${PIPESTATUS[0]}
+          echo "logs_follow_rc=$rc" | tee -a kaggle-output/r81_kaggle_logs.txt
+          if grep -q "R81 DIAGNOSTIC COMPLETE" kaggle-output/r81_kaggle_logs.txt; then exit 0; fi
+          if grep -q "R81 DIAGNOSTIC FAILED" kaggle-output/r81_kaggle_logs.txt; then exit 1; fi
+          sleep 120
+          kaggle kernels logs "$KAGGLE_KERNEL" 2>&1 | tee -a kaggle-output/r81_kaggle_logs.txt
+          if grep -q "R81 DIAGNOSTIC COMPLETE" kaggle-output/r81_kaggle_logs.txt; then exit 0; fi
+          if grep -q "R81 DIAGNOSTIC FAILED" kaggle-output/r81_kaggle_logs.txt; then exit 1; fi
+          exit 1
+
+      - name: Upload R81 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r81-diagnostics
+          path: |
+            kaggle-output/r81_kaggle_logs.txt
+            kaggle-output/r81_push.log
+          if-no-files-found: warn
+
+      - name: Download R81 generated outputs
+        if: success()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p kaggle-output
+          kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output
+          find kaggle-output -maxdepth 4 -type f -print
+        continue-on-error: true
+
+      - name: Upload R81 generated outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r81-generated-outputs
+          path: |
+            kaggle-output/**/*.mp4
+            kaggle-output/**/*.wav
+            kaggle-output/**/*.json
+            kaggle-output/**/*.txt
+          if-no-files-found: warn
