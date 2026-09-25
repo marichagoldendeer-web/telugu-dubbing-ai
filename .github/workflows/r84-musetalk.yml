@@ -1,0 +1,142 @@
+name: R84 MuseTalk 1.5 Lip Sync Benchmark
+
+concurrency:
+  group: r84-musetalk-benchmark
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r84/**"
+      - ".github/workflows/r84-musetalk.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r84-musetalk-benchmark
+  KAGGLE_INPUT_DATASET: anjiallkumar/r84-r80-dub-input
+
+jobs:
+  r84:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify secrets
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          kaggle --version
+          gh --version
+
+      - name: Package the known-good R80 output as a Kaggle input dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r84-input
+          mkdir -p r84-input
+
+          gh run download 36109243897 -n r80-generated-outputs -D r84-r80-artifact
+
+          MP4="$(find r84-r80-artifact -type f -name '*.mp4' -print -quit)"
+          test -n "$MP4"
+          cp "$MP4" r84-input/r80_final_dub.mp4
+
+          cat > r84-input/dataset-metadata.json <<'JSON'
+          {
+            "title": "R84 R80 Dub Input",
+            "id": "anjiallkumar/r84-r80-dub-input",
+            "licenses": [{"name": "CC-BY-4.0"}],
+            "description": "Temporary benchmark input containing the known-good R80 Telugu-to-English dubbed MP4 for lip-sync feasibility testing."
+          }
+          JSON
+
+          ls -lh r84-input
+
+          if kaggle datasets status "$KAGGLE_INPUT_DATASET" >/dev/null 2>&1; then
+            kaggle datasets version -p r84-input -m "Refresh R80 dubbed input for R84 MuseTalk benchmark" -q
+          else
+            kaggle datasets create -p r84-input -q
+          fi
+
+          for attempt in $(seq 1 12); do
+            if kaggle datasets status "$KAGGLE_INPUT_DATASET" >/dev/null 2>&1; then
+              echo "R84 input dataset ready"
+              break
+            fi
+            sleep 15
+          done
+          kaggle datasets status "$KAGGLE_INPUT_DATASET"
+
+      - name: Push R84 Kaggle kernel
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p kaggle/r84
+
+      - name: Resolve R84 kernel
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          sleep 20
+          for attempt in $(seq 1 10); do
+            echo "R84 kernel resolve attempt ${attempt}/10"
+            if kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r84-musetalk --page-size 50 2>&1 | grep -q "anjiallkumar/telugu-dubbing-ai-r84-musetalk-benchmark"; then
+              echo "R84 kernel resolved"
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
+
+      - name: Stream R84 Kaggle logs
+        if: always()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          mkdir -p kaggle-output
+          sleep 45
+          timeout 3600 kaggle kernels logs "$KAGGLE_KERNEL" --follow --interval 10 2>&1 | tee kaggle-output/r84_kaggle_logs.txt
+          rc=${PIPESTATUS[0]}
+          echo "logs_follow_rc=$rc" | tee -a kaggle-output/r84_kaggle_logs.txt
+          if grep -q "R84 MUSE TALK BENCHMARK COMPLETE" kaggle-output/r84_kaggle_logs.txt; then exit 0; fi
+          if grep -q "R84 MUSE TALK BENCHMARK FAILED" kaggle-output/r84_kaggle_logs.txt; then exit 1; fi
+          sleep 120
+          kaggle kernels logs "$KAGGLE_KERNEL" 2>&1 | tee -a kaggle-output/r84_kaggle_logs.txt
+          grep -q "R84 MUSE TALK BENCHMARK COMPLETE" kaggle-output/r84_kaggle_logs.txt && exit 0
+          grep -q "R84 MUSE TALK BENCHMARK FAILED" kaggle-output/r84_kaggle_logs.txt && exit 1
+          exit 1
+
+      - name: Download R84 outputs
+        if: success()
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p kaggle-output/generated
+          kaggle kernels output "$KAGGLE_KERNEL" -p kaggle-output/generated
+          find kaggle-output/generated -maxdepth 4 -type f -print
+
+      - name: Upload R84 benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r84-musetalk-benchmark
+          path: |
+            kaggle-output/r84_kaggle_logs.txt
+            kaggle-output/generated/**
+          if-no-files-found: warn
