@@ -87,23 +87,43 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          set -euo pipefail
-          kaggle kernels push -p kaggle/r84
+          set +e
+          output="$(kaggle kernels push -p kaggle/r84 2>&1)"
+          rc=$?
+          printf '%s\n' "$output"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "R84 Kaggle kernel push command failed with rc=$rc"
+            exit "$rc"
+          fi
+
+          if printf '%s\n' "$output" | grep -qiE 'Kernel push error|Maximum weekly GPU quota|quota.*reached|quota.*exhausted'; then
+            echo "R84 Kaggle kernel push was rejected by Kaggle."
+            exit 1
+          fi
+
+          echo "R84 Kaggle kernel push accepted."
 
       - name: Resolve R84 kernel
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          sleep 20
-          for attempt in $(seq 1 10); do
-            echo "R84 kernel resolve attempt ${attempt}/10"
-            if kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r84-musetalk --page-size 50 2>&1 | grep -q "anjiallkumar/telugu-dubbing-ai-r84-musetalk-benchmark"; then
-              echo "R84 kernel resolved"
+          for attempt in $(seq 1 12); do
+            echo "R84 kernel status attempt ${attempt}/12"
+            status="$(kaggle kernels status "$KAGGLE_KERNEL" 2>&1)"
+            rc=$?
+            printf '%s\n' "$status"
+
+            if [ "$rc" -eq 0 ]; then
+              echo "R84 kernel resolved via exact kernel status."
               exit 0
             fi
+
             sleep 20
           done
+
+          echo "Timed out waiting for exact R84 Kaggle kernel status."
           exit 1
 
       - name: Stream R84 Kaggle logs
