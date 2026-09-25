@@ -12,6 +12,10 @@ on:
       - ".github/workflows/r84-musetalk.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r84-musetalk-benchmark
   KAGGLE_INPUT_DATASET: anjiallkumar/r84-r80-dub-input
@@ -44,7 +48,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           set -euo pipefail
-          rm -rf r84-input
+          rm -rf r84-input r84-r80-artifact
           mkdir -p r84-input
 
           gh run download 36109243897 -n r80-generated-outputs -D r84-r80-artifact
