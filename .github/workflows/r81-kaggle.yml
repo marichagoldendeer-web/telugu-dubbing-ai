@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r81-longform
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r81-longform-real-source
   KAGGLE_SOURCE_DATASET: anjiallkumar/r81-telugu-longform-source
 
 jobs:
@@ -58,6 +58,21 @@ jobs:
           else
             kaggle datasets create -p r81-source --public
           fi
+          echo "Waiting for Kaggle dataset propagation..."
+          DATASET_READY=0
+          for attempt in $(seq 1 12); do
+            echo "Dataset readiness attempt ${attempt}/12"
+            if kaggle datasets status "$KAGGLE_SOURCE_DATASET" >/dev/null 2>&1; then
+              DATASET_READY=1
+              break
+            fi
+            sleep 15
+          done
+          test "$DATASET_READY" -eq 1 || {
+            echo "R81_ERROR=Source dataset was not visible after creation/refresh"
+            exit 1
+          }
+          kaggle datasets status "$KAGGLE_SOURCE_DATASET"
 
       - name: Push R81 to Kaggle
         env:
