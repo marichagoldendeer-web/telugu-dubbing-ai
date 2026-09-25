@@ -1,0 +1,74 @@
+name: R82 R81 Longform Quality Audit
+
+concurrency:
+  group: r82-quality-audit
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r82/**"
+      - ".github/workflows/r82-quality-audit.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r81-longform-real-source
+
+jobs:
+  r82:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install Kaggle CLI
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          kaggle --version
+
+      - name: Download R81 production outputs
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r82-output
+          mkdir -p r82-output
+          kaggle kernels output "$KAGGLE_KERNEL" -p r82-output
+          echo "R82 downloaded files:"
+          find r82-output -type f -printf '%p %s bytes\n' | sort
+          test -n "$(find r82-output -type f -name '*.mp4' -print -quit)"
+          test -n "$(find r82-output -type f -name '*.json' -print -quit)"
+
+      - name: Run R82 quality audit
+        run: |
+          set -euo pipefail
+          python kaggle/r82/runner.py r82-output
+
+      - name: Upload R82 audit package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r82-quality-audit
+          path: |
+            r82-report/
+            r82-output/**/*.json
+            r82-output/**/*.txt
+          if-no-files-found: warn
+
+      - name: Upload R82 listening samples
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r82-listening-samples
+          path: r82-report/samples/
+          if-no-files-found: warn
