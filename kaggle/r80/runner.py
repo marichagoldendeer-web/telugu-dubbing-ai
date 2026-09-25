@@ -1117,9 +1117,15 @@ try:
             log(f"R80_QC_FILE_SIZE={size}")
             log(f"R80_QC_VIDEO_STREAMS={len(video_streams)}")
             log(f"R80_QC_AUDIO_STREAMS={len(audio_streams)}")
-            if abs(duration - CLIP_SECONDS) > 0.05:
+            # The source is 25 fps; stream-copy muxing can quantize the
+            # final MP4 duration to the last video frame. Allow a small
+            # frame-quantization tolerance while still rejecting real drift.
+            duration_tolerance = max(0.10, 2.0 / 25.0)
+            log(f"R80_QC_DURATION_TOLERANCE={duration_tolerance:.3f}s")
+            if abs(duration - CLIP_SECONDS) > duration_tolerance:
                 qc_errors.append(
-                    f"final duration mismatch: {duration:.3f}s vs source {CLIP_SECONDS:.3f}s"
+                    f"final duration mismatch: {duration:.3f}s vs source {CLIP_SECONDS:.3f}s "
+                    f"(tolerance {duration_tolerance:.3f}s)"
                 )
             if size <= 100000:
                 qc_errors.append(f"final MP4 unexpectedly small: {size} bytes")
