@@ -96,7 +96,7 @@ jobs:
             echo "R81 kernel resolve attempt ${attempt}/10"
             LIST_OUTPUT="$(kaggle kernels list --user anjiallkumar --search telugu-dubbing-ai-r81 --page-size 50 2>&1 || true)"
             printf '%s\n' "$LIST_OUTPUT"
-            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk '$1 == "anjiallkumar/telugu-dubbing-ai-r81-longform" {print $1; exit}')"
+            ACTUAL_KERNEL="$(printf '%s\n' "$LIST_OUTPUT" | awk -v expected="$KAGGLE_KERNEL" '$1 == expected {print $1; exit}')"
             if [ -n "$ACTUAL_KERNEL" ]; then break; fi
             sleep 20
           done
