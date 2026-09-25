@@ -1,0 +1,85 @@
+name: R83 Human Listening QC Pack
+
+concurrency:
+  group: r83-human-listening-qc
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaggle/r83/**"
+      - ".github/workflows/r83-human-listening-qc.yml"
+  workflow_dispatch:
+
+env:
+  KAGGLE_KERNEL: anjiallkumar/telugu-dubbing-ai-r81-longform-real-source
+  KAGGLE_SOURCE_DATASET: anjiallkumar/r81-telugu-longform-source
+
+jobs:
+  r83:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Kaggle secret
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || exit 1
+
+      - name: Install R83 tools
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "kaggle==2.2.2"
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          kaggle --version
+          ffprobe -version | head -n 1
+
+      - name: Download R81 production outputs
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r83-r81-output
+          mkdir -p r83-r81-output
+          kaggle kernels output "$KAGGLE_KERNEL" -p r83-r81-output
+          test -n "$(find r83-r81-output -type f -name '*.mp4' -print -quit)"
+          test -n "$(find r83-r81-output -type f -name 'r81_segment_manifest.json' -print -quit)"
+          test -n "$(find r83-r81-output -type f -name 'r81_final_qc_report.json' -print -quit)"
+
+      - name: Download exact R81 source dataset
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf r83-source
+          mkdir -p r83-source
+          kaggle datasets download -d "$KAGGLE_SOURCE_DATASET" -p r83-source --unzip
+          find r83-source -type f -printf '%p %s bytes\n' | sort
+          test -n "$(find r83-source -type f \( -name '*.webm' -o -name '*.mp4' -o -name '*.mkv' -o -name '*.mov' \) -print -quit)"
+
+      - name: Build R83 human listening package
+        run: |
+          set -euo pipefail
+          python kaggle/r83/runner.py r83-r81-output r83-source
+
+      - name: Upload R83 human listening package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r83-human-listening-qc
+          path: |
+            r83-report/
+            r83-listening/
+          if-no-files-found: error
+
+      - name: Publish R83 result
+        if: always()
+        run: |
+          set -euo pipefail
+          cat r83-report/r83_summary.txt
