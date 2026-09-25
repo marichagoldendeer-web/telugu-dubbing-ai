@@ -833,8 +833,8 @@ try:
     # Some short translated chunks remain too dense even after one
     # neighboring merge. Allow one additional adjacent merge when needed,
     # while keeping a bounded sentence-sized window for TTS naturalness.
-    MAX_DYNAMIC_MERGE_SECONDS = 15.00
-    MAX_DYNAMIC_MERGE_WORDS = 48
+    MAX_DYNAMIC_MERGE_SECONDS = 20.00
+    MAX_DYNAMIC_MERGE_WORDS = 64
     MAX_DYNAMIC_MERGE_GAP = 1.50
     dynamic_merge_count = 0
 
