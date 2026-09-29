@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dubbing Studio</title>
+<style>
+  :root { color-scheme: dark; --bg:#0e1117; --panel:#161b26; --line:#242c3d; --accent:#6c8cff; --muted:#8b95ab; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:#e8ecf4; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:28px 24px 8px; max-width:960px; margin:0 auto; }
+  h1 { margin:0; font-size:24px; }
+  .sub { color:var(--muted); font-size:14px; margin-top:6px; }
+  main { max-width:960px; margin:0 auto; padding:16px 24px 64px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:36px; text-align:center; cursor:pointer; transition:.15s; }
+  .drop.hover, .drop:hover { border-color:var(--accent); background:#1a2133; }
+  .drop input { display:none; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-top:18px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  select, button { font:inherit; border-radius:8px; border:1px solid var(--line); background:#0f1420; color:inherit; padding:10px 12px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#0b0f18; font-weight:600; cursor:pointer; padding:10px 20px; }
+  button.primary:disabled { opacity:.5; cursor:not-allowed; }
+  .check { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:14px; }
+  .bar { height:8px; background:#0f1420; border-radius:6px; overflow:hidden; margin:12px 0 8px; }
+  .bar div { height:100%; background:var(--accent); width:0; transition:width .4s; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  td.t { white-space:nowrap; color:var(--muted); font-variant-numeric:tabular-nums; }
+  video { width:100%; border-radius:10px; margin-top:8px; background:#000; }
+  .hide { display:none; }
+  .err { color:#ff8484; }
+  .warn { color:#ffcc66; }
+  .pill { display:inline-block; font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 10px; margin-right:6px; }
+  a.dl { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dubbing Studio</h1>
+  <div class="sub">Upload a video, detect its language, and dub it into Telugu, Tamil, Kannada or Malayalam with lip sync.</div>
+</header>
+<main>
+  <div class="card">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*" />
+      <div id="dropText"><strong>Drop a video here</strong><br /><span class="sub">or click to browse — mp4, mov, mkv, webm</span></div>
+    </label>
+    <div class="row">
+      <div>
+        <label for="lang">Dub into</label>
+        <select id="lang"></select>
+      </div>
+      <div class="check"><input type="checkbox" id="lipsync" checked /><label for="lipsync" style="margin:0">Lip sync the speaker</label></div>
+      <button class="primary" id="go" disabled>Start dubbing</button>
+    </div>
+    <div class="sub" id="providers" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card hide" id="statusCard">
+    <div id="statusMsg">Starting…</div>
+    <div class="bar"><div id="barFill"></div></div>
+    <div class="sub" id="statusSub"></div>
+  </div>
+
+  <div class="card hide" id="resultCard">
+    <div id="resultMeta"></div>
+    <video id="player" controls></video>
+    <p><a class="dl" id="download" download>Download dubbed video</a></p>
+    <table id="segments"><thead><tr><th>Time</th><th>Original</th><th>Dubbed text</th></tr></thead><tbody></tbody></table>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let selectedFile = null, pollTimer = null;
+
+async function loadConfig() {
+  const cfg = await (await fetch('/api/config')).json();
+  $('lang').innerHTML = cfg.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+  const p = cfg.providers;
+  $('providers').innerHTML =
+    `<span class="pill">ASR: ${p.asr}</span><span class="pill">MT: ${p.translate}</span>` +
+    `<span class="pill">TTS: ${p.tts}</span><span class="pill">Lip sync: ${p.lipsync}</span>` +
+    (cfg.lipsync_ready ? '' : '<span class="warn">Lip-sync model not installed — run scripts/setup_wav2lip.sh</span>');
+}
+
+function pickFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  $('dropText').innerHTML = `<strong>${file.name}</strong><br /><span class="sub">${(file.size / 1048576).toFixed(1)} MB — click to choose another</span>`;
+  $('go').disabled = false;
+}
+
+$('file').addEventListener('change', (e) => pickFile(e.target.files[0]));
+['dragenter', 'dragover'].forEach(ev => $('drop').addEventListener(ev, (e) => { e.preventDefault(); $('drop').classList.add('hover'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, (e) => { e.preventDefault(); $('drop').classList.remove('hover'); }));
+$('drop').addEventListener('drop', (e) => pickFile(e.dataTransfer.files[0]));
+
+$('go').addEventListener('click', async () => {
+  if (!selectedFile) return;
+  $('go').disabled = true;
+  $('resultCard').classList.add('hide');
+  $('statusCard').classList.remove('hide');
+  $('statusMsg').textContent = 'Uploading…';
+  $('statusMsg').className = '';
+  const body = new FormData();
+  body.append('file', selectedFile);
+  body.append('target_language', $('lang').value);
+  body.append('lip_sync', $('lipsync').checked ? 'true' : 'false');
+  const res = await fetch('/api/jobs', { method: 'POST', body });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail || res.statusText;
+    $('statusMsg').textContent = 'Upload failed: ' + detail;
+    $('statusMsg').className = 'err';
+    $('go').disabled = false;
+    return;
+  }
+  poll((await res.json()).id);
+});
+
+function poll(jobId) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    const job = await (await fetch(`/api/jobs/${jobId}`)).json();
+    $('barFill').style.width = job.progress + '%';
+    $('statusMsg').textContent = job.message;
+    $('statusSub').textContent = `stage: ${job.stage} · ${job.progress}%`;
+    if (job.status === 'error') {
+      clearInterval(pollTimer);
+      $('statusMsg').textContent = 'Failed: ' + job.error;
+      $('statusMsg').className = 'err';
+      $('go').disabled = false;
+    } else if (job.status === 'done') {
+      clearInterval(pollTimer);
+      $('go').disabled = false;
+      showResult(jobId, job);
+    }
+  }, 2000);
+}
+
+function showResult(jobId, job) {
+  const r = job.result || {};
+  $('resultCard').classList.remove('hide');
+  $('resultMeta').innerHTML =
+    `<span class="pill">Detected: ${r.source_language_name} (${r.language_probability})</span>` +
+    `<span class="pill">Dubbed: ${r.target_language_name}</span>` +
+    `<span class="pill">Lip sync: ${r.lip_sync ? 'on' : 'off'}</span>` +
+    (r.warning ? `<div class="warn">${r.warning}</div>` : '');
+  $('player').src = `/api/jobs/${jobId}/video?t=${Date.now()}`;
+  $('download').href = `/api/jobs/${jobId}/video`;
+  $('segments').querySelector('tbody').innerHTML = (r.segments || [])
+    .map(s => `<tr><td class="t">${s.start.toFixed(1)}–${s.end.toFixed(1)}s</td><td>${escapeHtml(s.text)}</td><td>${escapeHtml(s.translation)}</td></tr>`)
+    .join('');
+}
+
+const escapeHtml = (s) => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+loadConfig();
+</script>
+</body>
+</html>
