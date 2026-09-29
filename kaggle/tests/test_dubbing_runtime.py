@@ -23,8 +23,7 @@ class DubbingRuntimeTests(unittest.TestCase):
             digest = sha256_file(path)
             self.assertEqual(
                 digest,
-                "6ca13d52ca70c883e0b94d7b1c3f2f9f5b9d7f50d4b2eaa9b7f6f0f6b8d7c0a1"
-                if False else "e99a18c428cb38d5f260853678922e03abd83356f0b5c19cbbd4f5b1b0f6e0c8"
+                "6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090",
             )
 
     def test_dataset_requires_exactly_one_video(self) -> None:
@@ -65,7 +64,10 @@ class DubbingRuntimeTests(unittest.TestCase):
             payload = json.loads(
                 (resumed.run_dir / "run_manifest.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(payload["stages"]["audio_extraction"]["status"], "passed")
+            self.assertEqual(
+                payload["stages"]["audio_extraction"]["status"],
+                "passed",
+            )
 
     def test_provider_config_from_environment(self) -> None:
         with patch.dict(
@@ -79,6 +81,7 @@ class DubbingRuntimeTests(unittest.TestCase):
             clear=False,
         ):
             cfg = ProviderConfig.from_env()
+
         self.assertEqual(cfg.asr, "indicconformer")
         self.assertEqual(cfg.translation, "indictrans2")
         self.assertEqual(cfg.lipsync, "musetalk")
@@ -95,8 +98,14 @@ class DubbingRuntimeTests(unittest.TestCase):
 
     def test_build_atempo_filter(self) -> None:
         self.assertEqual(build_atempo_filter(1.25), "atempo=1.25000000")
-        self.assertEqual(build_atempo_filter(4.0), "atempo=2.00000000,atempo=2.00000000")
-        self.assertEqual(build_atempo_filter(0.25), "atempo=0.50000000,atempo=0.50000000")
+        self.assertEqual(
+            build_atempo_filter(4.0),
+            "atempo=2.00000000,atempo=2.00000000",
+        )
+        self.assertEqual(
+            build_atempo_filter(0.25),
+            "atempo=0.50000000,atempo=0.50000000",
+        )
 
 
 if __name__ == "__main__":
